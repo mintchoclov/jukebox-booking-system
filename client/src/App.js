@@ -1,0 +1,23 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import Login from './pages/Login'
+import Signup from './pages/Signup'
+import Dashboard from './pages/Dashboard'
+import Bidding from './pages/Bidding'
+import Booking from './pages/Booking'
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/bidding" element={<Bidding />} />
+        <Route path="/booking" element={<Booking />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+export default App
