@@ -129,16 +129,30 @@ router.post('/run-allocation', (req, res) => {
       // 返回完整版，很多乱码
       //res.json(Object.values(allocation))
       // 返回简化版
-      res.json(Object.values(allocation).map((slot) => ({
-        slot_date: slot.slot_date,
-        slot_time: slot.slot_time,
-        is_tie: slot.is_tie,
-        suggested_winner: slot.suggested_winner.band_name,
-        winner_score: slot.suggested_winner.effective_bid_value,
-        tie_candidates: slot.tie_candidates.map((bid) => bid.band_name)
-      })))
+      const response = Object.values(allocation).map((slot) => {
+        return {
+          slot_date: slot.slot_date,
+          slot_time: slot.slot_time,
+          is_tie: slot.is_tie,
+
+          winner_band_id: slot.suggested_winner.band_id,
+          suggested_winner: slot.suggested_winner.band_name,
+          winner_score: slot.suggested_winner.effective_bid_value,
+
+          tie_candidates: slot.tie_candidates.map((bid) => {
+            return {
+              band_id: bid.band_id,
+              band_name: bid.band_name,
+              score: bid.effective_bid_value
+            }
+          })
+        }
+      })
+      res.json(response)
+      })
     })
-  })
+
+
 
 
   // Admin confirm booking for winner
@@ -227,6 +241,7 @@ router.post('/run-allocation', (req, res) => {
         bookings.slot_time,
         bookings.allocation_score,
         bookings.status,
+        bookings.reject_reason,
         bookings.created_at
       FROM bookings
       LEFT JOIN bands ON bookings.band_id = bands.id
@@ -247,15 +262,13 @@ router.post('/run-allocation', (req, res) => {
   })
 
 
-
-
   // Admin approve
 
 
   // Admin rejects a booking
   // POST /api/admin/reject-booking
   router.post('/reject-booking', (req, res) => {
-    const { booking_id } = req.body
+    const { booking_id, reject_reason} = req.body
 
     if (!booking_id) {
       return res.status(400).json({
@@ -265,13 +278,16 @@ router.post('/run-allocation', (req, res) => {
 
     const sql = `
       UPDATE bookings
-      SET status = 'rejected'
+      SET
+        status = 'rejected',
+        reject_reason = ?
       WHERE id = ?
     `
 
-    db.query(sql, [booking_id], (err, result) => {
+    db.query(sql, [reject_reason || null, booking_id], (err, result) => {
       if (err) {
         console.error(err)
+
         return res.status(500).json({
           message: 'Failed to reject the booking.'
         })
@@ -284,14 +300,10 @@ router.post('/run-allocation', (req, res) => {
       }
 
       res.json({
-        message: 'Booking rejected successfully.'
+        message: 'Booking rejected successfully.',
+        reject_reason: reject_reason || null
       })
     })
   })
-
-
-
-
-
 
 module.exports = router
