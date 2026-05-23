@@ -19,14 +19,13 @@ Phase 1 allocation logic:
   - Return allocation result for admin review.
 */
 
-
 /* Phase 2:admin 收集所有bids，找出highest bid（s）， 随机数
 - random tie-break
-- cascading preference allocation
 - mandatory 3 slots per band, must have 3 choices
 - prevent duplicate slot bids
 */
 
+// 15/5/26 --> added function for admin to confirm bookings
 
 /* Not yet included:
 - cascading preference allocation
@@ -37,6 +36,7 @@ Phase 1 allocation logic:
 - frontend integration (co-work)
 */
 
+// Admin run allocation algo
 router.post('/run-allocation', (req, res) => {
   const sql = `
     SELECT
@@ -98,7 +98,6 @@ router.post('/run-allocation', (req, res) => {
         }
       })
 
-      res.json(Object.values(allocation))
       // Decide winner for each slot using js logic only
       // sql ordering is not used to choose the winner
       Object.values(allocation).forEach((slot) => {
@@ -140,5 +139,159 @@ router.post('/run-allocation', (req, res) => {
       })))
     })
   })
+
+
+  // Admin confirm booking for winner
+  // POST /api/admin/confirm-booking
+  router.post('/confirm-booking', (req, res) => {
+    if (!req.body) {
+      return res.status(400).json({
+        message: 'Request body is required'
+      })
+    }
+
+    const {
+      band_id,
+      slot_date,
+      slot_time,
+      allocation_score
+    } = req.body
+
+    // 1) check whether this slot has already been confirmed
+    const checkSql = `
+      SELECT *
+      FROM bookings
+      WHERE slot_date = ?
+        AND slot_time = ?
+        AND status = 'confirmed'
+    `
+
+    db.query(checkSql, [slot_date, slot_time], (checkErr, existingBookings) => {
+      if (checkErr) {
+        console.error(checkErr)
+        return res.status(500).json({
+          message: 'Failed to check existing bookings'
+        })
+      }
+
+      if (existingBookings.length > 0) {
+        return res.status(400).json({
+          message: 'This slot is already confirmed for another band'
+        })
+      }
+
+      // 2) insert confirmed booking
+      const insertSql = `
+        INSERT INTO bookings
+        (
+          band_id,
+          slot_date,
+          slot_time,
+          allocation_score,
+          status
+        )
+        VALUES (?, ?, ?, ?, 'confirmed')
+      `
+
+      db.query(
+        insertSql,
+        [band_id, slot_date, slot_time, allocation_score],
+        (insertErr, result) => {
+          if (insertErr) {
+            console.error(insertErr)
+            return res.status(500).json({
+              message: 'Failed to confirm booking'
+            })
+          }
+
+          res.json({
+            message: 'Booking confirmed successfully',
+            booking_id: result.insertId
+          })
+        }
+      )
+    })
+  })
+
+
+
+  // Admin able to check the confirmed bookings
+  // GET /api/admin/bookings
+  router.get('/bookings', (req, res) => {
+    const sql = `
+      SELECT
+        bookings.id,
+        bookings.band_id,
+        bands.name AS band_name,
+        bookings.slot_date,
+        bookings.slot_time,
+        bookings.allocation_score,
+        bookings.status,
+        bookings.created_at
+      FROM bookings
+      LEFT JOIN bands ON bookings.band_id = bands.id
+      ORDER BY bookings.slot_date, bookings.slot_time
+    `
+
+    db.query(sql, (err, results) => {
+      if (err) {
+        console.error(err)
+
+        return res.status(500).json({
+          message: 'Failed to fetch bookings'
+        })
+      }
+
+      res.json(results)
+    })
+  })
+
+
+
+
+  // Admin approve
+
+
+  // Admin rejects a booking
+  // POST /api/admin/reject-booking
+  router.post('/reject-booking', (req, res) => {
+    const { booking_id } = req.body
+
+    if (!booking_id) {
+      return res.status(400).json({
+        message: 'booking_id is required.'
+      })
+    }
+
+    const sql = `
+      UPDATE bookings
+      SET status = 'rejected'
+      WHERE id = ?
+    `
+
+    db.query(sql, [booking_id], (err, result) => {
+      if (err) {
+        console.error(err)
+        return res.status(500).json({
+          message: 'Failed to reject the booking.'
+        })
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          message: 'Booking is not found.'
+        })
+      }
+
+      res.json({
+        message: 'Booking rejected successfully.'
+      })
+    })
+  })
+
+
+
+
+
 
 module.exports = router
