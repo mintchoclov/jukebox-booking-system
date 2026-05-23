@@ -2,6 +2,21 @@ const express = require('express')
 const router = express.Router()
 const db = require('../db')
 
+// simple MS1 admin access control
+// frontend / curl should send header: x-user-role: admin
+/*
+function requireAdmin(req, res, next) {
+    const role = req.headers['x-user-role']
+
+    if(role != 'admin') {
+        return res.status(403).json({
+            message: 'Admin access required.'
+        })
+    }
+    next()
+}
+*/
+
 // POST /api/admin/run-allocation
 /*
 Phase 1:根据 band_type + preference_rank 计算分数
@@ -307,3 +322,4 @@ router.post('/run-allocation', (req, res) => {
   })
 
 module.exports = router
+
