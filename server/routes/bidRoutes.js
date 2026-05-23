@@ -14,6 +14,21 @@ router.post('/', (req, res) => {
     bid_value
   } = req.body
 
+// Valid timeslot --> even
+  const validSlotTimes = [
+    '08:00',
+    '10:00',
+    '12:00',
+    '14:00',
+    '18:00',
+    '20:00'
+  ]
+
+  if (!validSlotTimes.includes(slot_time)) {
+    return res.status(400).json({
+        message: 'Invalid slot time. Slot must start at an even 2-hour block!'
+    })
+  }
 
   // SQL query
   const sql = `
