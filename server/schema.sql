@@ -11,16 +11,16 @@ CREATE DATABASE IF NOT EXISTS jukebox;
 USE jukebox;
 
 CREATE TABLE IF NOT EXISTS users (
-                                     id INT AUTO_INCREMENT PRIMARY KEY,
-                                     username VARCHAR(255),
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255),
     email VARCHAR(255),
     password VARCHAR(255),
     role ENUM('admin', 'band', 'individual')
     );
 
 CREATE TABLE IF NOT EXISTS bands (
-                                     id INT AUTO_INCREMENT PRIMARY KEY,
-                                     name VARCHAR(255) NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
     leader_user_id INT,
     band_type ENUM('standard', 'cbtr', 'low_priority')
     DEFAULT 'standard',
