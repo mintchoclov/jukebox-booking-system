@@ -19,15 +19,21 @@ Phase 1 allocation logic:
   - Return allocation result for admin review.
 */
 
-/* Not included yet
+
+/* Phase 2:admin 收集所有bids，找出highest bid（s）， 随机数
 - random tie-break
 - cascading preference allocation
 - mandatory 3 slots per band, must have 3 choices
 - prevent duplicate slot bids
+*/
+
+
+/* Not yet included:
+- cascading preference allocation
 - deadline checking
 - admin approval workflow
 - authentication / authorization
-- conflict checking --> no validation for same banc, same time with multiple bookings
+- conflict checking --> no validation for same band, same time with multiple confirmed bookings
 - frontend integration (co-work)
 */
 
@@ -63,8 +69,7 @@ router.post('/run-allocation', (req, res) => {
 
     ORDER BY
       bids.slot_date,
-      bids.slot_time,
-      effective_bid_value DESC
+      bids.slot_time
   `
 
     db.query(sql, (err, bids) => {
@@ -80,11 +85,12 @@ router.post('/run-allocation', (req, res) => {
       bids.forEach((bid) => {
         const slotKey = `${bid.slot_date}_${bid.slot_time}`
 
+        // collect ALL bids first before deciding
         if (!allocation[slotKey]) {
           allocation[slotKey] = {
             slot_date: bid.slot_date,
             slot_time: bid.slot_time,
-            suggested_winner: bid,
+            //suggested_winner: bid, (phase1, 1st bid auto become winner)
             all_bids: [bid]
           }
         } else {
@@ -93,6 +99,45 @@ router.post('/run-allocation', (req, res) => {
       })
 
       res.json(Object.values(allocation))
+      // Decide winner for each slot using js logic only
+      // sql ordering is not used to choose the winner
+      Object.values(allocation).forEach((slot) => {
+
+        // Find highest bidding score
+        const maxScore = Math.max(
+          ...slot.all_bids.map(
+            bid => bid.effective_bid_value
+          )
+        )
+
+        // Find ALL bids with highest score
+        const tiedBids = slot.all_bids.filter(
+          (bid) => bid.effective_bid_value === maxScore
+        )
+
+        // Random tie-break, randomly choose 1
+        const randomIndex = Math.floor(
+          Math.random() * tiedBids.length
+        )
+
+        // winner logic
+        // is_tie(boolean); tie_candidates:同分候选bands; suggested winner: random winner
+        slot.suggested_winner = tiedBids[randomIndex]
+        slot.is_tie = tiedBids.length > 1
+        slot.tie_candidates = tiedBids
+      })
+
+      // 返回完整版，很多乱码
+      //res.json(Object.values(allocation))
+      // 返回简化版
+      res.json(Object.values(allocation).map((slot) => ({
+        slot_date: slot.slot_date,
+        slot_time: slot.slot_time,
+        is_tie: slot.is_tie,
+        suggested_winner: slot.suggested_winner.band_name,
+        winner_score: slot.suggested_winner.effective_bid_value,
+        tie_candidates: slot.tie_candidates.map((bid) => bid.band_name)
+      })))
     })
   })
 
