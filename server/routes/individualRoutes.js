@@ -132,6 +132,15 @@ router.post('/book', (req, res) => {
         })
     }
 
+    // validate slot_date, prevent frontend passing in invalid date
+    const parsedSlotDate = new Date(slot_date)
+
+    if (Number.isNaN(parsedSlotDate.getTime())) {
+        return res.status(400).json({
+            message: 'Invalid slot_date.'
+        })
+    }
+
     if (!['primary', 'extra'].includes(slot_category)) {
         return res.status(400).json({
           message: 'slot_category must be primary or extra.'
@@ -165,7 +174,7 @@ router.post('/book', (req, res) => {
           is_mr_certified
         FROM users
         WHERE id = ?
-      `
+     `
 
      db.query(userSql, [user_id], (userErr, userResults) => {
         if (userErr) {
@@ -195,6 +204,7 @@ router.post('/book', (req, res) => {
            })
         }
 
+        // this line maybe a bit extra? cuz every user should be ME-certified and approved by admin
         if (!user.is_mr_certified) {
            return res.status(403).json({
                message: 'Only MR-certified users can book self-practice slots.'
@@ -248,9 +258,16 @@ router.post('/book', (req, res) => {
                             message: 'Failed to check primary slot rule.'
                         })
                     }
+
                     if (slot_category === 'primary' && primaryResults.length > 0) {
                        return res.status(400).json({
-                           message: 'This user already has a primary slot for this week. Please book an extra slot instead.'
+                           message: 'This user already has a primary slot for this week. Please try to book an extra slot instead.'
+                       })
+                    }
+
+                    if (slot_category === 'extra' && primaryResults.length === 0) {
+                       return res.status(400).json({
+                           message: 'You must book a primary slot before booking extra slots for this week.'
                        })
                     }
 
@@ -302,10 +319,160 @@ router.post('/book', (req, res) => {
 
 
 
+
+
+
 //GET  /api/individual/view-my-bookings
+// individual user views their own self-practice bookings
+// phase 1 , directly book, directly insert in mysql and make status == confirmed
+router.get('/view-my-bookings', (req, res) => {
+    const { user_id } = req.query
+
+    if (!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required.'
+        })
+    }
+
+    const sql = `
+        SELECT
+            id,
+            user_id,
+            booking_type,
+            slot_category,
+            slot_date,
+            slot_time,
+            status,
+            cancel_reason,
+            cancelled_at,
+            is_late_cancellation,
+            created_at
+        FROM bookings
+        WHERE user_id = ?
+          AND booking_type = 'individual'
+        ORDER BY slot_date, slot_time
+    `
+
+    db.query(sql, [user_id], (err, results) => {
+        if (err) {
+            console.error(err)
+            return res.status(500).json({
+                message: 'Failed to fetch individual bookings.'
+            })
+        }
+
+        res.json(results)
+    })
+})
+
+
+
+
+
+
 
 
 
 
 
 //POST /api/individual/cancel-booking
+// individual users cancel their own self-practice booking
+// phase 1: directly canceled by user, directly update in mysql, change the status to cancelled/ late-canceled
+// phase 2: get approved by admin and then cancel (wait to check out the documentation first)
+    const {
+        user_id,
+        booking_id,
+        cancel_reason
+    } = req.body
+
+    if (!user_id || !booking_id) {
+        return res.status(400).json({
+            message: 'user_id and booking_id are required.'
+        })
+    }
+
+    // step 1: Find the booking and make sure it belongs to this user
+    const findSql = `
+        SELECT *
+        FROM bookings
+        WHERE id = ?
+          AND user_id = ?
+          AND booking_type = 'individual'
+    `
+
+    db.query(findSql, [booking_id, user_id], (findErr, results) => {
+        if (findErr) {
+            console.error(findErr)
+            return res.status(500).json({
+                message: 'Failed to find booking.'
+            })
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({
+                message: 'Booking not found or does not belong to this user.'
+            })
+        }
+
+        const booking = results[0]
+
+        if (booking.status !== 'confirmed') {
+            return res.status(400).json({
+                message: 'Only confirmed bookings can be cancelled.'
+            })
+        }
+
+        // step 2: Check 72-hour cancellation rule
+        const atLeast72HoursBefore = isAtLeast72HoursBefore(
+            booking.slot_date,
+            booking.slot_time
+        )
+
+        const newStatus = atLeast72HoursBefore ? 'cancelled' : 'late_cancelled'
+        const isLateCancellation = !atLeast72HoursBefore
+
+        // step 3: Update booking status
+        const updateSql = `
+            UPDATE bookings
+            SET
+                status = ?,
+                cancel_reason = ?,
+                cancelled_at = CURRENT_TIMESTAMP,
+                is_late_cancellation = ?
+            WHERE id = ?
+              AND user_id = ?
+              AND booking_type = 'individual'
+        `
+
+        db.query(
+            updateSql,
+            [
+                newStatus,
+                cancel_reason || null,
+                isLateCancellation,
+                booking_id,
+                user_id
+            ],
+            (updateErr) => {
+                if (updateErr) {
+                    console.error(updateErr)
+                    return res.status(500).json({
+                        message: 'Failed to cancel booking.'
+                    })
+                }
+
+                res.json({
+                    message: isLateCancellation
+                        ? 'Booking cancelled late and logged.'
+                        : 'Booking cancelled successfully and returned to pool.',
+                    booking_id,
+                    status: newStatus,
+                    is_late_cancellation: isLateCancellation,
+                    cancel_reason: cancel_reason || null
+                })
+            }
+        )
+    })
+})
+
+module.exports = router
