@@ -5,6 +5,7 @@ require('dotenv').config()
 const authRoutes = require('./routes/authRoutes')
 const bidRoutes = require('./routes/bidRoutes')
 const adminRoutes = require('./routes/adminRoutes')
+const individualRoutes = require('./routes/individualRoutes')
 const app = express()
 
 
@@ -19,6 +20,7 @@ app.use(express.json())
 app.use('/api/auth', authRoutes)
 app.use('/api/bids', bidRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/individual', individualRoutes)
 
 
 
