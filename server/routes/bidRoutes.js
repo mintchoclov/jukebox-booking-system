@@ -2,10 +2,41 @@ const express = require('express') // use express framework
 const router = express.Router() // create router module
 const db = require('../db')
 
+// helper function to sync with frontend slots
+// convert frontend time slot label into backend/MySQL start time format
+// e.g--> 8:00am - 10:00am -> "08:00"
+function normalizeSlotTime(slotTime) {
+   if (!slotTime) {
+      return null
+   }
+  const cleanedSlotTime = String(slotTime).trim().toLowerCase()
+  const slotTimeMap = {
+    '8:00am - 10:00am': '08:00',
+    '10:00am - 12:00pm': '10:00',
+    '12:00pm - 2:00pm': '12:00',
+    '2:00pm - 4:00pm': '14:00',
+    '4:00pm - 6:00pm': '16:00',
+    '6:00pm - 8:00pm': '18:00',
+    '8:00pm - 10:00pm': '20:00',
+    '10:00pm - 12:00am': '22:00',
+
+    '08:00': '08:00',
+    '10:00': '10:00',
+    '12:00': '12:00',
+    '14:00': '14:00',
+    '16:00': '16:00',
+    '18:00': '18:00',
+    '20:00': '20:00',
+    '22:00': '22:00'
+  }
+  return slotTimeMap[slotTime] || null
+}
+
 // 提交bids POST /api/bids --> single bids
 router.post('/', (req, res) => {
 
   // 从前端 JSON 里面取数据， 需要前端配合
+  /*
   const {
     band_id,
     slot_date,
@@ -13,12 +44,22 @@ router.post('/', (req, res) => {
     preference_rank,
     bid_value
   } = req.body
+*/
+  const {
+    band_id,
+    slot_date,
+    preference_rank,
+    bid_value
+  } = req.body
 
-  if (![1, 2, 3].includes(Number(preference_rank))) {
-    return res.status(400).json({
-      message: 'Invalid preference rank. It must be 1, 2, or 3.'
-    })
-  }
+  const slot_time = normalizeSlotTime(req.body.slot_time)
+
+
+ if (!slot_time || !validSlotTimes.includes(slot_time)) {
+   return res.status(400).json({
+     message: 'Invalid slot time. Slot must be a valid 2-hour block.'
+   })
+ }
 
   // Valid timeslot --> even
   const validSlotTimes = [
@@ -29,16 +70,14 @@ router.post('/', (req, res) => {
     '16:00',
     '18:00',
     '20:00',
-    '22:00',
-    '00:00'
+    '22:00'
   ]
 
-  if (!validSlotTimes.includes(slot_time)) {
+  if (!slot_time || !validSlotTimes.includes(slot_time)) {
     return res.status(400).json({
-        message: 'Invalid slot time. Slot must start at an even 2-hour block!'
+      message: 'Invalid slot time. Slot must be a valid 2-hour block.'
     })
   }
-
 
   // SQL query
   const sql = `
@@ -132,8 +171,7 @@ router.post('/weekly', (req, res) => {
     '16:00',
     '18:00',
     '20:00',
-    '22:00',
-    '00:00'
+    '22:00'
   ]
 
   const seenRanks = new Set()
@@ -142,7 +180,9 @@ router.post('/weekly', (req, res) => {
   const now = new Date()
 
   for (const bid of bids) {
-    const { slot_date, slot_time, preference_rank } = bid
+    //const { slot_date, slot_time, preference_rank } = bid
+    const { slot_date, preference_rank } = bid
+    const slot_time = normalizeSlotTime(bid.slot_time)
 
      // 把 slot_date 转成 JS Date 对象，用于 ddl checking
       const slotDate = new Date(slot_date)
@@ -163,9 +203,9 @@ router.post('/weekly', (req, res) => {
     seenRanks.add(Number(preference_rank))
 
     // Validate slot_time
-    if (!validSlotTimes.includes(slot_time)) {
+    if (!slot_time || !validSlotTimes.includes(slot_time)) {
       return res.status(400).json({
-        message: 'Invalid slot time. Slot must start at an even 2-hour block.'
+        message: 'Invalid slot time. Slot must be a valid 2-hour block.'
       })
     }
 
@@ -197,7 +237,7 @@ router.post('/weekly', (req, res) => {
 
       if (now > deadline) {
         return res.status(400).json({
-          message: `Bidding deadline has passed for slot ${bid.slot_date} ${bid.slot_time}`
+          message: `Bidding deadline has passed for slot ${slot_date} ${slot_time}`
         })
       }
     }
@@ -214,11 +254,19 @@ router.post('/weekly', (req, res) => {
     (band_id, slot_date, slot_time, preference_rank, bid_value)
     VALUES ?
   `
-
+/*
   const values = bids.map((bid) => [
     band_id,
     bid.slot_date,
     bid.slot_time,
+    bid.preference_rank,
+    bid.bid_value
+  ])
+  */
+  const values = bids.map((bid) => [
+    band_id,
+    bid.slot_date,
+    normalizeSlotTime(bid.slot_time),
     bid.preference_rank,
     bid.bid_value
   ])
@@ -278,7 +326,7 @@ router.get('/', (req, res) => {
         console.error(err)
 
         return res.status(500).json({
-          message: 'Failed to submit bid'
+          message: 'Failed to fetch bids'
         })
       }
 
