@@ -3,6 +3,7 @@ import API_URL from '../config'
 
 function Signup() {
   const [username, setUsername] = useState('')
+  const [emailPrefix, setEmailPrefix] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -10,11 +11,18 @@ function Signup() {
   // tracks whether signup was successful
   const [submitted, setSubmitted] = useState(false)
 
+  // update both the prefix and full email when user types
+  function handleEmailChange(e) {
+    const prefix = e.target.value
+    setEmailPrefix(prefix)
+    setEmail(prefix + '@u.nus.edu')
+  }
+
   function handleSubmit(e) {
     e.preventDefault()
 
     // check all fields are filled
-    if (!username || !email || !password) {
+    if (!username || !emailPrefix || !password) {
       setError('Please fill in all fields')
       return
     }
@@ -78,15 +86,18 @@ function Signup() {
           />
         </div>
 
-        {/* NUS email field */}
+        {/* NUS email field with autocomplete */}
         <div>
           <label>NUS Email</label>
-          <input
-            type="email"
-            placeholder="e1234567@u.nus.edu"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="e1234567"
+              value={emailPrefix}
+              onChange={handleEmailChange}
+            />
+            <span>@u.nus.edu</span>
+          </div>
         </div>
 
         {/* password field */}

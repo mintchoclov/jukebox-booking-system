@@ -1,7 +1,7 @@
 const cron = require('node-cron')
 const notif = require('./notifs')
 
-// every thurs 8am
+// every thurs 8am IMPORTANT, as of now, set as thurs 8am but admin can choose when to open the schedule
 cron.schedule('0 8 * * 4', () => {
   notifications.notifyBiddingOpen()
 })

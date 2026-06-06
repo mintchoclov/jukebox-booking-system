@@ -3,16 +3,24 @@ import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
 
 function Login() {
+  const [emailPrefix, setEmailPrefix] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
+  // update both the prefix and full email when user types
+  function handleEmailChange(e) {
+    const prefix = e.target.value
+    setEmailPrefix(prefix)
+    setEmail(prefix + '@u.nus.edu')
+  }
+
   function handleSubmit(e) {
     e.preventDefault()
 
     // check all fields are filled
-    if (!email || !password) {
+    if (!emailPrefix || !password) {
       setError('Please fill in all fields')
       return
     }
@@ -42,15 +50,18 @@ function Login() {
       <h1>JukeBox Login</h1>
       <form onSubmit={handleSubmit}>
 
-        {/* NUS email field */}
+        {/* NUS email field with autocomplete */}
         <div>
           <label>NUS Email</label>
-          <input
-            type="email"
-            placeholder="e1234567@u.nus.edu"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="e1234567"
+              value={emailPrefix}
+              onChange={handleEmailChange}
+            />
+            <span>@u.nus.edu</span>
+          </div>
         </div>
 
         {/* password field */}
