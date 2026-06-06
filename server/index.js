@@ -7,6 +7,10 @@ const bidRoutes = require('./routes/bidRoutes')
 const adminRoutes = require('./routes/adminRoutes')
 const app = express()
 
+// telegram bot and schedule
+require('./telebot')
+require('./schedule')
+
 
 app.use(cors({
   origin: true,
