@@ -29,7 +29,8 @@ router.post('/', (req, res) => {
     '16:00',
     '18:00',
     '20:00',
-    '22:00'
+    '22:00',
+    '00:00'
   ]
 
   if (!validSlotTimes.includes(slot_time)) {
@@ -131,7 +132,8 @@ router.post('/weekly', (req, res) => {
     '16:00',
     '18:00',
     '20:00',
-    '22:00'
+    '22:00',
+    '00:00'
   ]
 
   const seenRanks = new Set()
