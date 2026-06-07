@@ -139,22 +139,22 @@ function Signup() {
                 placeholder="Enter your name"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-xl bg-[#FDF6E3] text=.[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                className="w-full px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
               />
             </div>
 
             {/* NUS email */}
             <div className="mb-4">
               <label className="block text-xs font-medium text-[#09122C] mb-1">NUS Email</label>
-              <div className="flex">
+              <div className="flex w-full">
                 <input
                   type="text"
                   placeholder="e1234567"
                   value={emailPrefix}
                   onChange={handleEmailChange}
-                  className="flex-1 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
                 />
-                <span className="px-3 py-2.5 text-sm bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70">
+                <span className="w-28 sm:w-32 flex items-center justify-center text-xs sm:text-sm bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0 text-center px-1">
                   @u.nus.edu
                 </span>
               </div>
@@ -163,18 +163,18 @@ function Signup() {
             {/* password */}
             <div className="mb-5">
               <label className="block text-xs font-medium text-[#09122C] mb-1">Password</label>
-              <div className="flex">
+              <div className="flex w-full">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Min. 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="flex-1 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="px-3 py-2.5 bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70"
+                  className="w-28 sm:w-32 flex items-center justify-center bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0"
                 >
                   {showPassword ? '🙈' : '👁️'}
                 </button>
@@ -190,14 +190,7 @@ function Signup() {
             >
               {loading ? (
                 <>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    border: '2px solid #09122C',
-                    borderTop: '2px solid transparent',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite'
-                  }} />
+                  <div className="w-4 h-4 border-2 border-[#09122C] border-t-transparent rounded-full animate-spin" />
                   Creating account...
                 </>
               ) : (

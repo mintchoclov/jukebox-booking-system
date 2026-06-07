@@ -410,7 +410,7 @@ router.post('/run-allocation', (req, res) => {
             }
 
             res.json({
-               message: 'User reject successfully!'
+               message: 'User reject successfully!',
                user_id
             })
         })
