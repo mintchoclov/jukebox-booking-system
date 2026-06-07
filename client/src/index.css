@@ -1,13 +1,53 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes blob1 {
+  0%, 100% { border-radius: 60% 40% 70% 30% / 50% 60% 40% 50%; transform: translate(0, 0); }
+  33% { border-radius: 40% 60% 30% 70% / 60% 30% 50% 40%; transform: translate(20px, -20px); }
+  66% { border-radius: 70% 30% 50% 50% / 30% 50% 60% 40%; transform: translate(-10px, 15px); }
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+@keyframes blob2 {
+  0%, 100% { border-radius: 40% 60% 30% 70% / 60% 40% 50% 50%; transform: translate(0, 0); }
+  33% { border-radius: 60% 40% 70% 30% / 40% 60% 30% 50%; transform: translate(-20px, 20px); }
+  66% { border-radius: 30% 70% 50% 50% / 50% 30% 60% 40%; transform: translate(10px, -15px); }
+}
+
+@keyframes blob3 {
+  0%, 100% { border-radius: 50% 30% 60% 40% / 40% 60% 30% 50%; transform: translate(0, 0); }
+  33% { border-radius: 30% 60% 40% 70% / 60% 40% 50% 30%; transform: translate(15px, 15px); }
+  66% { border-radius: 60% 40% 30% 60% / 30% 50% 40% 60%; transform: translate(-15px, -10px); }
+}
+
+@keyframes blob4 {
+  0%, 100% { border-radius: 30% 60% 40% 70% / 50% 40% 60% 30%; transform: translate(0, 0); }
+  33% { border-radius: 50% 40% 60% 30% / 30% 60% 40% 50%; transform: translate(-10px, -20px); }
+  66% { border-radius: 40% 70% 30% 60% / 60% 30% 50% 40%; transform: translate(20px, 10px); }
+}
+
+.blob1 { animation: blob1 8s ease-in-out infinite; }
+.blob2 { animation: blob2 10s ease-in-out infinite; }
+.blob3 { animation: blob3 7s ease-in-out infinite; }
+.blob4 { animation: blob4 9s ease-in-out infinite; }
+
+@keyframes floatUp {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(0.5); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  60% { transform: translateX(-10px); }
+  80% { transform: translateX(10px); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
 }
