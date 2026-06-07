@@ -26,6 +26,8 @@ function Login() {
   const [typed, setTyped] = useState('')
   const [greetingIndex, setGreetingIndex] = useState(0)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isPending, setIsPending] = useState(false)
+  const [bumped, setBumped] = useState(false)
   const navigate = useNavigate()
 
   const { shakeStyle, triggerShake } = shake()
@@ -82,7 +84,9 @@ function Login() {
       .then(res => res.json())
       .then(data => {
         setLoading(false)
-        if (data.error) {
+        if (data.error === 'pending') {
+          setIsPending(true)
+        } else if (data.error) {
           setError(data.error)
           triggerShake()
         } else {
@@ -95,6 +99,51 @@ function Login() {
         setError('Something went wrong. Please try again.')
         triggerShake()
       })
+  }
+
+  // pending screen
+  if (isPending) {
+    return (
+      <div
+        className="min-h-screen bg-[#FDF6E3] flex items-center justify-center px-4 relative overflow-hidden"
+        onMouseMove={handleMouseMove}
+        onTouchMove={handleTouchMove}
+      >
+        <ParticleLayer />
+        <Blobs />
+        <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
+          <div className="bg-white rounded-2xl p-8 text-center border border-[#F0D9B5]">
+            <div className="text-5xl mb-4">⏳</div>
+            <h1 className="text-2xl font-semibold text-[#09122C] mb-3">Account Pending</h1>
+            <p className="text-sm text-[#09122C] opacity-60 mb-6">
+              Your account is still waiting for admin approval. You can nudge the admin to remind them!
+            </p>
+            {bumped ? (
+              <p className="text-sm text-green-500 mb-4">Admin has been notified! ✅</p>
+            ) : (
+              <button
+                onClick={() => {
+                  fetch(`${API_URL}/api/auth/bump-admin`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                  }).then(() => setBumped(true))
+                }}
+                className="w-full bg-[#F5C8C0] text-[#09122C] font-medium py-3 rounded-full text-sm mb-3"
+              >
+                Nudge Admin 👋
+              </button>
+            )}
+            <button
+              onClick={() => setIsPending(false)}
+              className="w-full bg-[#F5C842] text-[#09122C] font-medium py-3 rounded-full text-sm"
+            >
+              Back to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -362,6 +362,14 @@ router.post('/run-allocation', (req, res) => {
             })
         }
 
+        // notify user their account is approved
+        try {
+          const notifications = require('../notifications')
+          notifications.notifyAccountApproved(user_id)
+        } catch (e) {
+          console.error('Notification error:', e)
+        }
+
         res.json({
             message: 'User approved successfully!',
             user_id,
@@ -465,4 +473,3 @@ router.post('/run-allocation', (req, res) => {
   })
 
 module.exports = router
-

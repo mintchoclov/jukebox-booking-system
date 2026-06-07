@@ -3,19 +3,6 @@ const router = express.Router()
 const db = require('../db')
 
 // POST /api/auth/register
-// User sign up, changed logic for
-
-/*
-New accounts require admin approval before activation.
-Band leaders are assigned their role explicitly by admin.
-Certification status is managed by admin.
-Public signup should NOT allow user to choose role.
-New account defaults to:
-role -->individual
-status -->'pending'
-is_mr_certified --> false
-*/
-
 router.post('/register', (req, res) => {
   const { username, email, password } = req.body
   const emailRegex = /^e\d{7}@u\.nus\.edu$/
@@ -45,11 +32,16 @@ router.post('/register', (req, res) => {
           error: 'Email already registered'
         })
       }
-
       console.error(err)
-      return res.status(500).json({
-        error: err.message
-      })
+      return res.status(500).json({ error: err.message })
+    }
+
+    // notify admin of new signup to approve
+    try {
+      const notifications = require('../notifications')
+      notifications.notifyAdminNewUser(username, email)
+    } catch (e) {
+      console.error('Notification error:', e)
     }
 
     res.json({
@@ -61,12 +53,6 @@ router.post('/register', (req, res) => {
 
 
 // POST /api/auth/login
-// 用户登录
-/*
-Only approved users can login.
-pending / rejected / suspended users are blocked
-*/
-
 router.post('/login', (req, res) => {
   const { email, password } = req.body
 
@@ -91,23 +77,17 @@ router.post('/login', (req, res) => {
   db.query(sql, [email, password], (err, results) => {
     if (err) {
       console.error(err)
-      return res.status(500).json({
-        error: err.message
-      })
+      return res.status(500).json({ error: err.message })
     }
 
     if (results.length === 0) {
-      return res.status(401).json({
-        error: 'Invalid credentials'
-      })
+      return res.status(401).json({ error: 'Invalid credentials' })
     }
 
     const user = results[0]
 
     if (user.status === 'pending') {
-      return res.status(403).json({
-        error: 'Your account is pending admin approval.'
-      })
+      return res.status(403).json({ error: 'pending' })
     }
 
     if (user.status === 'rejected') {
@@ -129,6 +109,29 @@ router.post('/login', (req, res) => {
     }
 
     res.json(user)
+  })
+})
+
+
+// POST /api/auth/bump-admin
+// user bumps admin to approve their account
+router.post('/bump-admin', (req, res) => {
+  const { email } = req.body
+
+  const sql = `SELECT username FROM users WHERE email = ?`
+  db.query(sql, [email], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    const username = results[0]?.username || email
+
+    try {
+      const notifications = require('../notifications')
+      notifications.notifyAdminNewUser(username, email)
+    } catch (e) {
+      console.error('Notification error:', e)
+    }
+
+    res.json({ message: 'Admin notified' })
   })
 })
 

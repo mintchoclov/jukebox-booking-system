@@ -171,6 +171,20 @@ function notifyDehumidifierBump(userId) {
   })
 }
 
+function notifyAccountApproved(userId) {
+  const sql = `
+    SELECT telegram_chat_id, username
+    FROM users
+    WHERE id = ? AND telegram_chat_id IS NOT NULL
+  `
+  db.query(sql, [userId], (err, results) => {
+    if (err) return console.error(err)
+    results.forEach(user => {
+      bot.AccountApproved(user.telegram_chat_id, user.username)
+    })
+  })
+}
+
 // admin notifs
 function notifyAdminSlotReleased(slotDate, slotTime, bandId) {
   // bandname
@@ -216,6 +230,20 @@ function notifyAdminDehumidifierMissing(userId, slotDate) {
   })
 }
 
+function notifyAdminNewUser(username, email) {
+  const sql = `
+    SELECT telegram_chat_id
+    FROM users
+    WHERE role = 'admin' AND telegram_chat_id IS NOT NULL
+  `
+  db.query(sql, (err, results) => {
+    if (err) return console.error(err)
+    results.forEach(admin => {
+      bot.AdminNewUserPending(admin.telegram_chat_id, username, email)
+    })
+  })
+}
+
 module.exports = {
   notifyBiddingOpen,
   notifyBiddingDeadlineReminder,
@@ -228,5 +256,7 @@ module.exports = {
   notifyDehumidifier,
   notifyDehumidifierBump,
   notifyAdminSlotReleased,
-  notifyAdminDehumidifierMissing
+  notifyAdminDehumidifierMissing,
+  notifyAdminNewUser,
+  notifyAccountApproved
 }

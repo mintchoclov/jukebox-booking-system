@@ -87,6 +87,11 @@ function DehumidifierBump(chatId, username) {
     `🚨 <b>Dehumidifier Photo Missing!</b>\n\nHi ${username}, you have not submitted your dehumidifier photo yet.\n\nPlease do so immediately!`)
 }
 
+function AccountApproved(chatId, username) {
+  sendMessage(chatId,
+    `✅ <b>Account Approved!</b>\n\nHi ${username}, your JukeBox account has been approved!\n\nYou can now log in and start booking slots. 🎸`)
+}
+
 // admin notifs
 function AdminSlotReleased(chatId, slotDate, slotTime, bandName) {
   sendMessage(chatId,
@@ -96,6 +101,11 @@ function AdminSlotReleased(chatId, slotDate, slotTime, bandName) {
 function AdminDehumidifierMissing(chatId, username, slotDate) {
   sendMessage(chatId,
     `⚠️ <b>Missing Dehumidifier Photo!</b>\n\nThe last user <b>${username}</b> on <b>${slotDate}</b> has not submitted a dehumidifier photo after 30 minutes.\n\nPlease follow up!`)
+}
+
+function AdminNewUserPending(chatId, username, email) {
+  sendMessage(chatId,
+    `🔔 <b>New User Pending Approval!</b>\n\n<b>${username}</b> (${email}) has just signed up and is waiting for approval.\n\nPlease log in to the admin panel to approve or reject.`)
 }
 
 module.exports = {
@@ -111,5 +121,7 @@ module.exports = {
   Dehumidifier,
   DehumidifierBump,
   AdminSlotReleased,
-  AdminDehumidifierMissing
+  AdminDehumidifierMissing,
+  AdminNewUserPending,
+  AccountApproved
 }
