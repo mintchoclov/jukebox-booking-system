@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import Blobs from '../components/Blobs'
@@ -117,7 +117,7 @@ function Login() {
           </p>
         </div>
 
-        {/* form . */}
+        {/* form */}
         <div
           className="bg-white rounded-2xl p-6 border border-[#F0D9B5]"
           style={shakeStyle}
@@ -127,15 +127,15 @@ function Login() {
             {/* NUS email */}
             <div className="mb-4">
               <label className="block text-xs font-medium text-[#09122C] mb-1">NUS Email</label>
-              <div className="flex">
+              <div className="flex w-full">
                 <input
                   type="text"
                   placeholder="e1234567"
                   value={emailPrefix}
                   onChange={handleEmailChange}
-                  className="flex-1 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
                 />
-                <span className="px-3 py-2.5 text-sm bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70">
+                <span className="w-28 sm:w-32 flex items-center justify-center text-xs sm:text-sm bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0 text-center px-1">
                   @u.nus.edu
                 </span>
               </div>
@@ -144,18 +144,18 @@ function Login() {
             {/* password */}
             <div className="mb-5">
               <label className="block text-xs font-medium text-[#09122C] mb-1">Password</label>
-              <div className="flex">
+              <div className="flex w-full">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="flex-1 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="px-3 py-2.5 bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70"
+                  className="w-28 sm:w-32 flex items-center justify-center bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0"
                 >
                   {showPassword ? '🙈' : '👁️'}
                 </button>
@@ -171,14 +171,7 @@ function Login() {
             >
               {loading ? (
                 <>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    border: '2px solid #09122C',
-                    borderTop: '2px solid transparent',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite'
-                  }} />
+                  <div className="w-4 h-4 border-2 border-[#09122C] border-t-transparent rounded-full animate-spin" />
                   Logging in...
                 </>
               ) : (
@@ -189,7 +182,7 @@ function Login() {
 
           <p className="text-center text-xs text-[#09122C] opacity-50 mt-4">
             Don't have an account?{' '}
-            <a href="/signup" className="font-bold text-[#E8A89E] underline">Sign up here.</a>
+            <Link to="/signup" className="font-bold text-[#E8A89E] underline">Sign up here.</Link>
           </p>
         </div>
 
