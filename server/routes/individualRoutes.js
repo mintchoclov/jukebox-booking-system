@@ -67,10 +67,10 @@ function buildSlotDateTime(slotDate, slotTime) {
 
 // function doing ddl checking: at least 72 hours before
 function isAtLeast72HrsBefore(slotDate, slotTime) {
-    const slotSart = buildSlotDateTime(slotDate, slotTime)
+    const slotStart = buildSlotDateTime(slotDate, slotTime)
     const now = new Date()
 
-    const diffMs = slotSart - now
+    const diffMs = slotStart - now
     const diffHrs = diffMs / (1000 * 60 * 60)
 
     return diffHrs >= 72
@@ -159,7 +159,7 @@ router.post('/book', (req, res) => {
         })
       }
 
-    if (!isAtLeast72HoursBefore(slot_date, slot_time)) {
+    if (!isAtLeast72HrsBefore(slot_date, slot_time)) {
         return res.status(400).json({
           message: 'Self-practice bookings must be made at least 72 hours before the slot starts.'
         })
@@ -240,7 +240,7 @@ router.post('/book', (req, res) => {
                 WHERE user_id = ?
                     AND booking_type = 'individual'
                     AND slot_category = 'primary'
-                    AND status = 'confirmed'
+                    AND status IN ('pending', 'confirmed')
                     AND slot_date BETWEEN ? AND ?
                `
 
@@ -282,7 +282,7 @@ router.post('/book', (req, res) => {
                             slot_time,
                             status
                           )
-                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
+                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'pending')
                      `
 
                       db.query(
@@ -302,8 +302,9 @@ router.post('/book', (req, res) => {
                             }
 
                             res.json({
-                                message: 'Self-practice booking confirmed successfully.',
+                                message: 'Self-practice booking request submitted successfully, pending admin approval.',
                                 booking_id: result.insertId,
+                                status: 'pending',
                                 slot_time
                             })
                          }
@@ -374,11 +375,11 @@ router.get('/view-my-bookings', (req, res) => {
 
 
 
-
-//POST /api/individual/cancel-booking
-// individual users cancel their own self-practice booking
-// phase 1: directly canceled by user, directly update in mysql, change the status to cancelled/ late-canceled
-// phase 2: get approved by admin and then cancel (wait to check out the documentation first)
+// POST /api/individual/cancel-booking
+// Individual users cancel their own self-practice booking
+// Cancellation does NOT need admin approval.
+// If cancellation is less than 72 hours before the slot, it is logged as late_cancelled.
+router.post('/cancel-booking', (req, res) => {
     const {
         user_id,
         booking_id,
@@ -391,7 +392,7 @@ router.get('/view-my-bookings', (req, res) => {
         })
     }
 
-    // step 1: Find the booking and make sure it belongs to this user
+    // Step 1: Find the booking and make sure it belongs to this user
     const findSql = `
         SELECT *
         FROM bookings
@@ -422,8 +423,8 @@ router.get('/view-my-bookings', (req, res) => {
             })
         }
 
-        // step 2: Check 72-hour cancellation rule
-        const atLeast72HoursBefore = isAtLeast72HoursBefore(
+        // Step 2: Check 72-hour cancellation rule
+        const atLeast72HoursBefore = isAtLeast72HrsBefore(
             booking.slot_date,
             booking.slot_time
         )
@@ -431,7 +432,7 @@ router.get('/view-my-bookings', (req, res) => {
         const newStatus = atLeast72HoursBefore ? 'cancelled' : 'late_cancelled'
         const isLateCancellation = !atLeast72HoursBefore
 
-        // step 3: Update booking status
+        // Step 3: Update booking status
         const updateSql = `
             UPDATE bookings
             SET
