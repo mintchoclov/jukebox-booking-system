@@ -277,7 +277,150 @@ router.post('/run-allocation', (req, res) => {
   })
 
 
-  // Admin approve
+
+
+
+
+  // Admin approve, 一个大块， contain 3 diff apis
+
+  // admin viewing pending sign-up requests
+  // GET /api/admin/pending-users
+  router.get('/pending-users', (req, res) => {
+    const sql = `
+        SELECT
+            id,
+            username,
+            email,
+            role,
+            status,
+            is_mr_certified
+        FROM users
+        WHERE status = 'pending'
+        ORDER BY id DESC
+    `
+
+    db.query(sql, (err, results) => {
+        if(err) {
+            console.error(err)
+
+            return res.status(500).json({
+                message: 'Failed to fetch pending users!'
+            })
+        }
+
+        res.json(results)
+    })
+  })
+
+
+
+
+  // admin approves a pending signup request
+  //POST /api/admin/approve-user
+  router.post('/approved-user', (req,res) => {
+    const { user_id, role, is_mr_certified } = req.body
+
+    const validRoles = [ 'admin', 'band', 'individual']
+
+    if(!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required!'
+        })
+    }
+
+    const finalRole = role || 'individual'
+
+    if (!validRoles.includes(finalRole)) {
+        return res.status(400).json({
+            message: 'Invalid role, Role must be admin, band or individual.'
+        })
+    }
+
+    const certified = Boolean(is_mr_certified)
+
+    const sql = `
+        UPDATE users
+        SET
+            status = 'approved',
+            role = ?,
+            is_mr_certified = ?
+        WHERE id = ?
+            AND status = 'pending'
+    `
+
+    db.query(sql, [finalRole, certified, user_id], (err, result) => {
+        if (err) {
+            console.error(err)
+            return res.status(500).json({
+                message:'Failed to approve user.'
+            })
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                message: 'Pending user NOT found.'
+            })
+        }
+
+        res.json({
+            message: 'User approved successfully!',
+            user_id,
+            role: finalRole,
+            is_mr_certified: certified
+        })
+      })
+    })
+
+
+
+
+
+
+    // admin rejects a pending signup request
+    // POST /api/admin/reject-user
+    router.post('/reject-user', (req, res) => {
+        const{ user_id } = req.body
+
+        if(!user_id) {
+            return res.status(400).json({
+                message: 'user_id is required.'
+            })
+        }
+
+        const sql = `
+            UPDATE users
+            SET status = 'rejected'
+            WHERE id = ?
+                AND status = 'pending'
+        `
+
+        db.query(sql, [user_id], (err, result) => {
+            if(err) {
+                console.error(err)
+
+                return res.status(500).json({
+                    message: 'Failed to reject user.'
+                })
+            }
+
+            if(result.affectRows === 0) {
+                return res.status(404).json({
+                    message: 'Pending user NOT found.'
+                })
+            }
+
+            res.json({
+               message: 'User reject successfully!'
+               user_id
+            })
+        })
+    })
+
+
+
+
+
+
 
 
   // Admin rejects a booking

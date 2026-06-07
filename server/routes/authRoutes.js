@@ -3,7 +3,7 @@ const router = express.Router()
 const db = require('../db')
 
 // POST /api/auth/register
-// User signup
+// User sign up, changed logic for
 
 /*
 New accounts require admin approval before activation.
@@ -61,6 +61,7 @@ router.post('/register', (req, res) => {
 
 
 // POST /api/auth/login
+// 用户登录
 /*
 Only approved users can login.
 pending / rejected / suspended users are blocked
