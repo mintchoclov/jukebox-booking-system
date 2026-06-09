@@ -1,10 +1,10 @@
+// 08/06 updated styling with reference to design system 
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
-import Blobs from '../components/Blobs'
 import shake from '../hooks/shake'
-import cursorParticles from '../hooks/cursorParticles'
+import { Card, Button, Spinner, Label, ErrorText } from '../components/UI'
 
 const greetings = [
   'Ready to rock? 🎸',
@@ -15,6 +15,16 @@ const greetings = [
   'Strike a chord today! 🎶',
   'Practice makes perfect! 👩‍🎤'
 ]
+const inputClass = `
+  w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-beige rounded-l-xl
+  bg-cream text-navy outline-none focus:border-primary focus:ring-2
+  focus:ring-primary focus:ring-opacity-30
+`
+
+const suffixClass = `
+  w-28 sm:w-32 flex items-center justify-center text-xs sm:text-sm
+  bg-beige border border-beige rounded-r-xl text-navy opacity-70 shrink-0 text-center px-1
+`
 
 function Login() {
   const [emailPrefix, setEmailPrefix] = useState('')
@@ -31,7 +41,6 @@ function Login() {
   const navigate = useNavigate()
 
   const { shakeStyle, triggerShake } = shake()
-  const { handleMouseMove, handleTouchMove, ParticleLayer } = cursorParticles()
 
   // typewriter effect
   useEffect(() => {
@@ -104,24 +113,20 @@ function Login() {
   // pending screen
   if (isPending) {
     return (
-      <div
-        className="min-h-screen bg-[#FDF6E3] flex items-center justify-center px-4 relative overflow-hidden"
-        onMouseMove={handleMouseMove}
-        onTouchMove={handleTouchMove}
-      >
-        <ParticleLayer />
-        <Blobs />
-        <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
-          <div className="bg-white rounded-2xl p-8 text-center border border-[#F0D9B5]">
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm md:max-w-md lg:max-w-lg">
+          <Card className="p-8 text-center">
             <div className="text-5xl mb-4">⏳</div>
-            <h1 className="text-2xl font-semibold text-[#09122C] mb-3">Account Pending</h1>
-            <p className="text-sm text-[#09122C] opacity-60 mb-6">
+            <h1 className="text-2xl font-semibold text-navy mb-3">Account Pending</h1>
+            <p className="text-sm text-navy opacity-60 mb-6">
               Your account is still waiting for admin approval. You can nudge the admin to remind them!
             </p>
             {bumped ? (
-              <p className="text-sm text-green-500 mb-4">Admin has been notified! ✅</p>
+              <p className="text-sm text-successText mb-4">Admin has been notified! ✅</p>
             ) : (
-              <button
+              <Button
+                variant = "secondary"
+                className= "w-full mb-3"
                 onClick={() => {
                   fetch(`${API_URL}/api/auth/bump-admin`, {
                     method: 'POST',
@@ -129,111 +134,101 @@ function Login() {
                     body: JSON.stringify({ email })
                   }).then(() => setBumped(true))
                 }}
-                className="w-full bg-[#F5C8C0] text-[#09122C] font-medium py-3 rounded-full text-sm mb-3"
               >
                 Nudge Admin 👋
-              </button>
+              </Button>
             )}
-            <button
+            <Button variant ="primary" className="w-full" 
               onClick={() => setIsPending(false)}
-              className="w-full bg-[#F5C842] text-[#09122C] font-medium py-3 rounded-full text-sm"
             >
               Back to Login
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       </div>
     )
   }
 
   return (
-    <div
-      className="min-h-screen bg-[#FDF6E3] flex items-center justify-center px-4 relative overflow-hidden"
-      onMouseMove={handleMouseMove}
-      onTouchMove={handleTouchMove}
-    >
-      <ParticleLayer />
-      <Blobs />
-
-      <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-sm md:max-w-md lg:max-w-lg">
 
         {/* header */}
-        <div className="bg-white rounded-2xl p-8 text-center mb-6 border border-[#F0D9B5]">
-          <h1 className="text-3xl font-medium text-[#09122C] mb-3">Jukebox</h1>
+        <Card className="p-8 text-center mb-6">
+          <h1 className="text-3xl font-medium text-navy mb-3">Jukebox</h1>
           <img src={Mascot} alt="JukeBox mascot" className="w-64 mx-auto mb-3" />
-          <p className="text-sm text-[#09122C] opacity-60 min-h-[20px]">
+          <p className="text-sm text-navy opacity-60 min-h-[20px]">
             {typed}<span className="animate-pulse">|</span>
           </p>
-        </div>
+        </Card>
 
         {/* form */}
-        <div
-          className="bg-white rounded-2xl p-6 border border-[#F0D9B5]"
+        <Card
+          className="p-6"
           style={shakeStyle}
         >
           <form onSubmit={handleSubmit}>
 
             {/* NUS email */}
             <div className="mb-4">
-              <label className="block text-xs font-medium text-[#09122C] mb-1">NUS Email</label>
+              <Label>NUS Email</Label>
               <div className="flex w-full">
                 <input
                   type="text"
                   placeholder="e1234567"
                   value={emailPrefix}
                   onChange={handleEmailChange}
-                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                  className= {inputClass}
                 />
-                <span className="w-28 sm:w-32 flex items-center justify-center text-xs sm:text-sm bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0 text-center px-1">
-                  @u.nus.edu
+                <span className={suffixClass}>@u.nus.edu
                 </span>
               </div>
             </div>
 
             {/* password */}
             <div className="mb-5">
-              <label className="block text-xs font-medium text-[#09122C] mb-1">Password</label>
+              <Label>Password</Label>
               <div className="flex w-full">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-l-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
-                />
+                  className={inputClass}
+              />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="w-28 sm:w-32 flex items-center justify-center bg-[#F0D9B5] border border-[#F0D9B5] rounded-r-xl text-[#09122C] opacity-70 shrink-0"
+                  className= {suffixClass}
                 >
                   {showPassword ? '🙈' : '👁️'}
                 </button>
               </div>
             </div>
 
-            {error && <p className="text-red-500 text-xs mb-4">{error}</p>}
+            <ErrorText>{error}</ErrorText>
 
-            <button
-              type="submit"
+            <Button
+              type="submit" variant = "primary"
               disabled={loading}
-              className="w-full bg-[#F5C842] text-[#09122C] font-medium py-3 rounded-full text-sm flex items-center justify-center gap-2"
+              className="w-full flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-[#09122C] border-t-transparent rounded-full animate-spin" />
+                  <Spinner />
                   Logging in...
                 </>
               ) : (
                 'Log In'
               )}
-            </button>
+            </Button>
           </form>
 
-          <p className="text-center text-xs text-[#09122C] opacity-50 mt-4">
+          <p className="text-center text-xs text-navy opacity-50 mt-4">
             Don't have an account?{' '}
-            <Link to="/signup" className="font-bold text-[#E8A89E] underline">Sign up here.</Link>
+            <Link to="/signup" className="font-bold text-pinkDark underline">Sign up here.</Link>
           </p>
-        </div>
+        </Card>
 
       </div>
     </div>

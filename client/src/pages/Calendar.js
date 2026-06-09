@@ -1,0 +1,562 @@
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import API_URL from '../config'
+import shake from '../hooks/shake'
+import { Card, Button, Badge, Spinner, ErrorText } from '../components/UI'
+import { getDateStr, getBookingDateStr } from '../components/dateutils'
+import { slotStyles, legendItems } from '../components/calendarstyle'
+
+const timeSlots = [
+  { label: '8:00am', value: '08:00' },
+  { label: '10:00am', value: '10:00' },
+  { label: '12:00pm', value: '12:00' },
+  { label: '2:00pm', value: '14:00' },
+  { label: '4:00pm', value: '16:00' },
+  { label: '6:00pm', value: '18:00' },
+  { label: '8:00pm', value: '20:00' },
+  { label: '10:00pm', value: '22:00' },
+]
+
+const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function Calendar() {
+  const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const { shakeStyle, triggerShake } = shake()
+
+  const [bookings, setBookings] = useState([])
+  const [myBookings, setMyBookings] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [selectedAvailableSlot, setSelectedAvailableSlot] = useState(null)
+  const [slotCategory, setSlotCategory] = useState('primary')
+  const [bookingLoading, setBookingLoading] = useState(false)
+  const [bookingError, setBookingError] = useState('')
+  const [bookingSuccess, setBookingSuccess] = useState(false)
+  const [cancelLoading, setCancelLoading] = useState(false)
+  const [cancelSuccess, setCancelSuccess] = useState(false)
+
+  useEffect(() => {
+    if (!user || !user.id) {
+      navigate('/login')
+      return
+    }
+    fetchBookings()
+    fetchMyBookings()
+  }, [])
+
+  function fetchBookings() {
+    fetch(`${API_URL}/api/admin/bookings`)
+      .then(res => res.json())
+      .then(data => {
+        setBookings(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }
+
+  function fetchMyBookings() {
+    fetch(`${API_URL}/api/individual/view-my-bookings?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMyBookings(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }
+
+  function getWeekDates() {
+    const now = new Date()
+    const day = now.getDay()
+    const daysSinceMonday = (day + 6) % 7
+    const mondayDate = now.getDate() - daysSinceMonday + weekOffset * 7
+    return Array.from({ length: 7 }, (_, i) => {
+      return new Date(now.getFullYear(), now.getMonth(), mondayDate + i, 12, 0, 0)
+    })
+  }
+
+  const weekDates = getWeekDates()
+
+  function isBookingWindowOpen(date) {
+    const now = new Date()
+    const day = date.getDay()
+    const daysSinceMonday = (day + 6) % 7
+    const weekMonday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday)
+    const openTime = new Date(weekMonday.getFullYear(), weekMonday.getMonth(), weekMonday.getDate() - 3)
+    return now >= openTime
+  }
+
+  function isAtLeast72Hours(date, time) {
+    if (!date || !time) return false
+    const [h, m] = time.split(':').map(Number)
+    const slotDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0)
+    return (slotDate - new Date()) / (1000 * 60 * 60) >= 72
+  }
+
+  function getSlotBooking(date, time) {
+    const dateStr = getDateStr(date)
+    return bookings.find(b =>
+      getBookingDateStr(b.slot_date) === dateStr &&
+      b.slot_time?.slice(0, 5) === time &&
+      b.status === 'confirmed'
+    )
+  }
+
+  function getSlotStyle(booking, date, time) {
+    if (!booking) {
+      if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) {
+        return slotStyles.unavailable
+      }
+      return slotStyles.available
+    }
+    if (Number(booking.user_id) === Number(user.id)) return slotStyles.mine
+    if (booking.booking_type === 'band') return slotStyles.band
+    if (booking.slot_category === 'extra') return slotStyles.individualExtra
+    return slotStyles.individualPrimary
+  }
+
+  function getSlotLabel(booking, date, time) {
+    if (!booking) {
+      if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) return '🔒'
+      return ''
+    }
+    if (Number(booking.user_id) === Number(user.id)) {
+      return `Mine\n${booking.slot_category || 'primary'}`
+    }
+    if (booking.booking_type === 'band') return booking.band_name || 'Band'
+    return `${booking.booked_by || 'Taken'}\n${booking.slot_category || 'primary'}`
+  }
+
+  function getWeekRange(date) {
+    const day = date.getDay()
+    const daysSinceMonday = (day + 6) % 7
+    const weekMonday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday)
+    const weekSunday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday + 6, 23, 59, 59)
+    return { weekMonday, weekSunday }
+  }
+
+  function hasPrimaryThisWeek(date) {
+    const { weekMonday, weekSunday } = getWeekRange(date)
+    return myBookings.some(b => {
+      const bDate = new Date(b.slot_date?.slice(0, 10) + 'T12:00:00')
+      return bDate >= weekMonday && bDate <= weekSunday &&
+        b.slot_category === 'primary' && b.status === 'confirmed'
+    })
+  }
+
+  function canDisplace(booking) {
+    if (!booking) return false
+    if (booking.booking_type === 'band') return false
+    if (booking.slot_category !== 'extra') return false
+    if (Number(booking.user_id) === Number(user.id)) return false
+    if (!booking.date) return false
+    return !hasPrimaryThisWeek(booking.date)
+  }
+
+  function handleSlotClick(date, time) {
+    const booking = getSlotBooking(date, time)
+    setBookingError('')
+    setBookingSuccess(false)
+    setCancelSuccess(false)
+
+    if (booking) {
+      setSelectedSlot({ ...booking, date, time })
+      setSelectedAvailableSlot(null)
+      return
+    }
+
+    if (!isBookingWindowOpen(date)) {
+      setBookingError('Booking window not open yet for this week')
+      setSelectedAvailableSlot(null)
+      setSelectedSlot(null)
+      return
+    }
+
+    if (!isAtLeast72Hours(date, time)) {
+      setBookingError('Must book at least 72 hours in advance')
+      setSelectedAvailableSlot(null)
+      setSelectedSlot(null)
+      return
+    }
+
+    setSlotCategory(hasPrimaryThisWeek(date) ? 'extra' : 'primary')
+    setSelectedAvailableSlot({ date, time })
+    setSelectedSlot(null)
+  }
+
+  function handleBook() {
+    if (!selectedAvailableSlot) return
+    setBookingLoading(true)
+    setBookingError('')
+
+    fetch(`${API_URL}/api/individual/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: user.id,
+        slot_date: getDateStr(selectedAvailableSlot.date),
+        slot_time: selectedAvailableSlot.time,
+        slot_category: slotCategory
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setBookingLoading(false)
+        if (data.message?.toLowerCase().includes('success')) {
+          setBookingSuccess(true)
+          setSelectedAvailableSlot(null)
+          fetchBookings()
+          fetchMyBookings()
+        } else {
+          setBookingError(data.message || 'Failed to book slot')
+          triggerShake()
+        }
+      })
+      .catch(() => {
+        setBookingLoading(false)
+        setBookingError('Something went wrong')
+        triggerShake()
+      })
+  }
+
+  function handleCancel() {
+    if (!selectedSlot) return
+    setCancelLoading(true)
+
+    fetch(`${API_URL}/api/individual/cancel-booking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: user.id,
+        booking_id: selectedSlot.id
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setCancelLoading(false)
+        if (data.booking_id) {
+          setCancelSuccess(true)
+          setSelectedSlot(null)
+          fetchBookings()
+          fetchMyBookings()
+        } else {
+          setBookingError(data.message || 'Failed to cancel booking')
+        }
+      })
+      .catch(() => {
+        setCancelLoading(false)
+        setBookingError('Something went wrong')
+      })
+  }
+
+  function handleDisplace() {
+    if (!selectedSlot) return
+    setBookingLoading(true)
+    setBookingError('')
+
+    fetch(`${API_URL}/api/individual/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: user.id,
+        slot_date: getBookingDateStr(selectedSlot.slot_date),
+        slot_time: selectedSlot.slot_time?.slice(0, 5),
+        slot_category: 'primary'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setBookingLoading(false)
+        if (data.message?.toLowerCase().includes('success')) {
+          setBookingSuccess(true)
+          setSelectedSlot(null)
+          fetchBookings()
+          fetchMyBookings()
+        } else {
+          setBookingError(data.message || 'Failed to displace slot')
+          triggerShake()
+        }
+      })
+      .catch(() => {
+        setBookingLoading(false)
+        setBookingError('Something went wrong')
+        triggerShake()
+      })
+  }
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-navy opacity-50 text-sm">Loading...</p>
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen relative">
+      <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
+
+        {/* header */}
+        <Card className="p-6 text-center mb-6">
+          <h1 className="text-2xl font-medium text-navy mb-1">Music Room Calendar 🎵</h1>
+          <p className="text-sm text-navy opacity-50">Click an available slot to book it</p>
+        </Card>
+
+        {/* slot detail panel */}
+        {selectedSlot && (
+          <Card className="p-5 mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-sm font-medium text-navy">Slot details</p>
+              <button
+                onClick={() => { setSelectedSlot(null); setBookingError('') }}
+                className="text-xs text-navy opacity-40"
+              >✕</button>
+            </div>
+            <div className="bg-primarySoft rounded-xl p-4 mb-4">
+              <p className="text-sm font-medium text-navy">
+                {new Date(getBookingDateStr(selectedSlot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                  weekday: 'long', day: 'numeric', month: 'long'
+                })}
+              </p>
+              <p className="text-xs text-navy opacity-60 mt-1">
+                {selectedSlot.slot_time?.slice(0, 5)}
+              </p>
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <Badge variant={selectedSlot.booking_type === 'band' ? 'pink' : 'default'}>
+                  {selectedSlot.booking_type === 'band' ? 'Band' : 'Individual'}
+                </Badge>
+                <p className="text-sm font-medium text-navy">
+                  {selectedSlot.booking_type === 'band'
+                    ? selectedSlot.band_name
+                    : selectedSlot.booked_by}
+                </p>
+                {selectedSlot.slot_category && (
+                  <Badge variant={selectedSlot.slot_category === 'primary' ? 'primary' : 'default'}>
+                    {selectedSlot.slot_category} slot
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* cancel own booking */}
+            {Number(selectedSlot.user_id) === Number(user.id) && (
+              <div>
+                {cancelSuccess ? (
+                  <p className="text-xs text-successText text-center py-2">Booking cancelled ✓</p>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={handleCancel}
+                    disabled={cancelLoading}
+                  >
+                    {cancelLoading ? <Spinner /> : 'Cancel Booking'}
+                  </Button>
+                )}
+                {selectedSlot.date && !isAtLeast72Hours(selectedSlot.date, selectedSlot.slot_time?.slice(0, 5)) && (
+                  <p className="text-xs text-navy opacity-40 text-center mt-2">
+                    ⚠️ Less than 72 hours away — this will be logged as a late cancellation
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* displace someone else's extra slot, if have no primary */}
+            {canDisplace(selectedSlot) && (
+              <div>
+                <div className="bg-beige rounded-xl p-3 mb-3">
+                  <p className="text-xs text-navy opacity-60">
+                    This is an extra slot. Since you have no primary slot this week, you can take it as your primary!
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={handleDisplace}
+                  disabled={bookingLoading}
+                >
+                  {bookingLoading ? <><Spinner /> Loading...</> : 'Take this slot as Primary'}
+                </Button>
+              </div>
+            )}
+
+            <ErrorText>{bookingError}</ErrorText>
+          </Card>
+        )}
+
+        {/* booking panel */}
+        {selectedAvailableSlot && (
+          <Card className="p-5 mb-6" style={shakeStyle}>
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-sm font-medium text-navy">Book this slot</p>
+              <button
+                onClick={() => { setSelectedAvailableSlot(null); setBookingError('') }}
+                className="text-xs text-navy opacity-40"
+              >✕</button>
+            </div>
+            <div className="bg-primarySoft rounded-xl p-3 mb-4">
+              <p className="text-sm font-medium text-navy">
+                {selectedAvailableSlot.date.toLocaleDateString('en-GB', {
+                  weekday: 'long', day: 'numeric', month: 'long'
+                })}
+              </p>
+              <p className="text-xs text-navy opacity-60 mt-0.5">
+                {timeSlots.find(t => t.value === selectedAvailableSlot.time)?.label}
+              </p>
+            </div>
+            <div className="mb-4">
+              <p className="text-xs font-medium text-navy mb-2">Slot type</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSlotCategory('primary')}
+                  className={`flex-1 text-xs py-2 px-3 rounded-xl border transition-all ${
+                    slotCategory === 'primary'
+                      ? 'bg-primary border-primary text-navy font-medium'
+                      : 'bg-cream border-beige text-navy'
+                  }`}
+                >Primary</button>
+                <button
+                  onClick={() => setSlotCategory('extra')}
+                  className={`flex-1 text-xs py-2 px-3 rounded-xl border transition-all ${
+                    slotCategory === 'extra'
+                      ? 'bg-primary border-primary text-navy font-medium'
+                      : 'bg-cream border-beige text-navy'
+                  }`}
+                >Extra</button>
+              </div>
+              <p className="text-xs text-navy opacity-40 mt-1">
+                {slotCategory === 'primary'
+                  ? 'Your main slot for the week'
+                  : 'Additional slot — requires a primary slot first'}
+              </p>
+            </div>
+            <ErrorText>{bookingError}</ErrorText>
+            {bookingSuccess && (
+              <p className="text-successText text-xs mb-3">Slot booked! 🎵</p>
+            )}
+            <Button
+              variant="primary"
+              className="w-full flex items-center justify-center gap-2"
+              onClick={handleBook}
+              disabled={bookingLoading}
+            >
+              {bookingLoading ? <><Spinner /> Booking...</> : 'Confirm Booking'}
+            </Button>
+          </Card>
+        )}
+
+        {bookingError && !selectedAvailableSlot && !selectedSlot && (
+          <p className="text-dangerText text-xs mb-4 text-center">{bookingError}</p>
+        )}
+
+        {(bookingSuccess || cancelSuccess) && !selectedSlot && !selectedAvailableSlot && (
+          <div className="bg-success rounded-xl p-3 mb-4 text-center">
+            <p className="text-xs text-successText">
+              {cancelSuccess ? 'Booking cancelled ✓' : 'Slot booked! 🎵'}
+            </p>
+          </div>
+        )}
+
+        {/* legend */}
+        <div className="flex gap-3 mb-4 flex-wrap">
+          {legendItems.map((l, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <div className={`w-3 h-3 rounded ${l.style}`}></div>
+              <span className="text-xs text-navy opacity-50">{l.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* week navigation */}
+        <div className="flex justify-between items-center mb-4">
+          <button
+            onClick={() => {
+              setWeekOffset(w => w - 1)
+              setSelectedSlot(null)
+              setSelectedAvailableSlot(null)
+              setBookingError('')
+            }}
+            className="text-xs bg-beige text-navy px-3 py-1 rounded-full"
+          >← Prev</button>
+          <p className="text-sm font-medium text-navy">
+            {weekDates[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {weekDates[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </p>
+          <button
+            onClick={() => {
+              setWeekOffset(w => w + 1)
+              setSelectedSlot(null)
+              setSelectedAvailableSlot(null)
+              setBookingError('')
+            }}
+            className="text-xs bg-beige text-navy px-3 py-1 rounded-full"
+          >Next →</button>
+        </div>
+
+        {/* calendar grid */}
+        <Card className="p-4 mb-6 overflow-x-auto">
+          <div style={{ minWidth: '500px' }}>
+            <div className="grid gap-1" style={{ gridTemplateColumns: '50px repeat(7, 1fr)' }}>
+              <div></div>
+              {weekDates.map((d, i) => (
+                <div key={i} className="text-center pb-2">
+                  <p className="text-xs font-medium text-navy opacity-50">{days[i]}</p>
+                  <p className="text-xs text-navy opacity-30">{d.getDate()}</p>
+                </div>
+              ))}
+              {timeSlots.map(slot => (
+                <React.Fragment key={slot.value}>
+                  <div className="flex items-center justify-end pr-2">
+                    <span className="text-xs text-navy opacity-40">{slot.label}</span>
+                  </div>
+                  {weekDates.map((date, di) => {
+                    const booking = getSlotBooking(date, slot.value)
+                    const isSelected =
+                      (selectedSlot &&
+                        getBookingDateStr(selectedSlot.slot_date) === getDateStr(date) &&
+                        selectedSlot.slot_time?.slice(0, 5) === slot.value) ||
+                      (selectedAvailableSlot &&
+                        getDateStr(selectedAvailableSlot.date) === getDateStr(date) &&
+                        selectedAvailableSlot.time === slot.value)
+                    const label = getSlotLabel(booking, date, slot.value)
+                    const lines = label.split('\n')
+
+                    return (
+                      <div
+                        key={`${di}-${slot.value}`}
+                        onClick={() => handleSlotClick(date, slot.value)}
+                        className={`rounded min-h-[36px] flex flex-col items-center justify-center transition-all ${getSlotStyle(booking, date, slot.value)} ${isSelected ? 'ring-2 ring-navy' : ''}`}
+                      >
+                        {lines.map((line, li) => (
+                          <span
+                            key={li}
+                            style={{
+                              fontSize: '9px',
+                              color: '#09122C',
+                              lineHeight: '1.3',
+                              textAlign: 'center',
+                              padding: '0 2px',
+                              opacity: li === 1 ? 0.6 : 1
+                            }}
+                          >
+                            {line}
+                          </span>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Button
+          variant="primary"
+          className="w-full"
+          onClick={() => navigate('/dashboard')}
+        >
+          Back to Dashboard
+        </Button>
+
+      </div>
+    </div>
+  )
+}
+
+export default Calendar
