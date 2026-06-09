@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
-import Blobs from '../components/Blobs'
 import shake from '../hooks/shake'
-import cursorParticles from '../hooks/cursorParticles'
+import { Card, Button, Spinner, Label, Input, ErrorText } from '../components/UI'
 
 function Signup() {
   const [username, setUsername] = useState('')
@@ -16,8 +15,7 @@ function Signup() {
   const [loading, setLoading] = useState(false)
 
   const { shakeStyle, triggerShake } = shake()
-  const { handleMouseMove, handleTouchMove, ParticleLayer } = cursorParticles()
-
+  
   function handleEmailChange(e) {
     const prefix = e.target.value
     setEmailPrefix(prefix)
@@ -74,26 +72,21 @@ function Signup() {
   if (submitted) {
     return (
       <div
-        className="min-h-screen bg-[#FDF6E3] flex items-center justify-center px-4 relative overflow-hidden"
-        onMouseMove={handleMouseMove}
-        onTouchMove={handleTouchMove}
+        className="min-h-screen flex items-center justify-center px-4 relative"
       >
-        <ParticleLayer />
-        <Blobs />
         <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
-          <div className="bg-white rounded-2xl p-8 text-center border border-[#F0D9B5]">
+          <Card className="p-8 text-center">
             <div className="text-5xl mb-4">🎉</div>
             <h1 className="text-2xl font-semibold text-[#09122C] mb-3">Account Created!</h1>
             <p className="text-sm text-[#09122C] opacity-60 mb-6">
               Your account is pending admin approval. You will be notified once your account has been activated!
             </p>
-            <button
+            <Button variant = "primary" className= "w-full" 
               onClick={() => window.location.href = '/login'}
-              className="w-full bg-[#F5C842] text-[#09122C] font-medium py-3 rounded-full text-sm"
             >
               Back to Login
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       </div>
     )
@@ -101,25 +94,20 @@ function Signup() {
 
   return (
     <div
-      className="min-h-screen bg-[#FDF6E3] flex items-center justify-center px-4 relative overflow-hidden"
-      onMouseMove={handleMouseMove}
-      onTouchMove={handleTouchMove}
+      className="min-h-screen flex items-center justify-center px-4 relative"
     >
-      <ParticleLayer />
-      <Blobs />
-
       <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
 
         {/* header */}
-        <div className="bg-white rounded-2xl p-6 text-center mb-6 border border-[#F0D9B5]">
-          <h1 className="text-3xl font-semibold text-[#09122C] mb-3">Create Account</h1>
+        <Card className="p-6 text-center mb-6">
+          <h1 className="text-3xl font-semibold text-navy mb-3">Create Account</h1>
           <img src={Mascot} alt="JukeBox mascot" className="w-64 mx-auto mb-3" />
-          <p className="text-sm text-[#09122C] opacity-50">Join Jukebox today!</p>
-        </div>
+          <p className="text-sm text-navy opacity-50">Join Jukebox today!</p>
+        </Card>
 
         {/* form */}
-        <div
-          className="bg-white rounded-2xl p-6 border border-[#F0D9B5]"
+        <Card
+          className="p-6"
           style={shakeStyle}
         >
           {/* progress */}
@@ -133,7 +121,7 @@ function Signup() {
 
             {/* username */}
             <div className="mb-4">
-              <label className="block text-xs font-medium text-[#09122C] mb-1">Username</label>
+              <Label>Username</Label>
               <input
                 type="text"
                 placeholder="Enter your name"
@@ -145,7 +133,7 @@ function Signup() {
 
             {/* NUS email */}
             <div className="mb-4">
-              <label className="block text-xs font-medium text-[#09122C] mb-1">NUS Email</label>
+              <Label>NUS Email</Label>
               <div className="flex w-full">
                 <input
                   type="text"
@@ -162,7 +150,7 @@ function Signup() {
 
             {/* password */}
             <div className="mb-5">
-              <label className="block text-xs font-medium text-[#09122C] mb-1">Password</label>
+              <Label>Password</Label>
               <div className="flex w-full">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -181,29 +169,29 @@ function Signup() {
               </div>
             </div>
 
-            {error && <p className="text-red-500 text-xs mb-4">{error}</p>}
+            <ErrorText>{error}</ErrorText>
 
-            <button
-              type="submit"
+            <Button
+              type="submit" variant ="primary"
               disabled={loading}
-              className="w-full bg-[#F5C842] text-[#09122C] font-medium py-3 rounded-full text-sm flex items-center justify-center gap-2"
+              className="w-full flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-[#09122C] border-t-transparent rounded-full animate-spin" />
+                  <Spinner />
                   Creating account...
                 </>
               ) : (
                 'Sign Up'
               )}
-            </button>
+            </Button>
           </form>
 
-          <p className="text-center text-xs text-[#09122C] opacity-50 mt-4">
+          <p className="text-center text-xs text-navy opacity-50 mt-4">
             Already have an account?{' '}
-            <a href="/login" className="font-bold text-[#E8A89E] underline">Log in here.</a>
+            <a href="/login" className="font-bold text-pinkDark underline">Log in here.</a>
           </p>
-        </div>
+        </Card>
 
       </div>
     </div>

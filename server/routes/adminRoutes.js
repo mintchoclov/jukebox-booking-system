@@ -251,6 +251,10 @@ router.post('/run-allocation', (req, res) => {
       SELECT
         bookings.id,
         bookings.band_id,
+        bookings.user_id,
+        bookings.booking_type,
+        bookings.slot_category,
+        users.username AS booked_by,
         bands.name AS band_name,
         bookings.slot_date,
         bookings.slot_time,
@@ -260,6 +264,7 @@ router.post('/run-allocation', (req, res) => {
         bookings.created_at
       FROM bookings
       LEFT JOIN bands ON bookings.band_id = bands.id
+      LEFT JOIN users ON bookings.user_id = users.id
       ORDER BY bookings.slot_date, bookings.slot_time
     `
 

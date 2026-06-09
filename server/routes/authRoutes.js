@@ -69,7 +69,8 @@ router.post('/login', (req, res) => {
       email,
       role,
       status,
-      is_mr_certified
+      is_mr_certified,
+      telegram_chat_id
     FROM users
     WHERE email = ? AND password = ?
   `
