@@ -21,9 +21,10 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(255),
     email VARCHAR(255),
     password VARCHAR(255),
-    role ENUM('admin', 'band', 'individual'),
+    role ENUM('admin', 'band', 'individual') DEFAULT 'individual',
     status ENUM('pending', 'approved', 'rejected', 'suspended') DEFAULT 'pending',
-    is_mr_certified BOOLEAN DEFAULT FALSE
+    is_mr_certified BOOLEAN DEFAULT FALSE,
+    band_id INT NULL
     );
 
 CREATE TABLE IF NOT EXISTS bands (
