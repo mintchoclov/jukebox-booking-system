@@ -2,7 +2,7 @@ import { useState } from 'react'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import shake from '../hooks/shake'
-import { Card, Button, Spinner, Label, Input, ErrorText } from '../components/UI'
+import { Card, Button, Spinner, Label, ErrorText } from '../components/UI'
 
 function Signup() {
   const [username, setUsername] = useState('')
