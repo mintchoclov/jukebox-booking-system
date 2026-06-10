@@ -3,21 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
 import shake from '../hooks/shake'
 import { Card, Button, Badge, Spinner, ErrorText } from '../components/UI'
-import { getDateStr, getBookingDateStr } from '../components/dateutils'
-import { slotStyles, legendItems } from '../components/calendarstyle'
-
-const timeSlots = [
-  { label: '8:00am', value: '08:00' },
-  { label: '10:00am', value: '10:00' },
-  { label: '12:00pm', value: '12:00' },
-  { label: '2:00pm', value: '14:00' },
-  { label: '4:00pm', value: '16:00' },
-  { label: '6:00pm', value: '18:00' },
-  { label: '8:00pm', value: '20:00' },
-  { label: '10:00pm', value: '22:00' },
-]
-
-const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+import { getDateStr, getBookingDateStr, getWeekDates, isBookingWindowOpen, isAtLeast72Hours, getWeekRange } from '../components/dateutils'
+import { slotStyles, legendItems, TIME_SLOTS, DAYS} from '../components/calendarstyle'
+import SlotGrid from '../components/Slotgrid'
 
 function Calendar() {
   const navigate = useNavigate()
@@ -63,33 +51,7 @@ function Calendar() {
       .catch(() => {})
   }
 
-  function getWeekDates() {
-    const now = new Date()
-    const day = now.getDay()
-    const daysSinceMonday = (day + 6) % 7
-    const mondayDate = now.getDate() - daysSinceMonday + weekOffset * 7
-    return Array.from({ length: 7 }, (_, i) => {
-      return new Date(now.getFullYear(), now.getMonth(), mondayDate + i, 12, 0, 0)
-    })
-  }
-
-  const weekDates = getWeekDates()
-
-  function isBookingWindowOpen(date) {
-    const now = new Date()
-    const day = date.getDay()
-    const daysSinceMonday = (day + 6) % 7
-    const weekMonday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday)
-    const openTime = new Date(weekMonday.getFullYear(), weekMonday.getMonth(), weekMonday.getDate() - 3)
-    return now >= openTime
-  }
-
-  function isAtLeast72Hours(date, time) {
-    if (!date || !time) return false
-    const [h, m] = time.split(':').map(Number)
-    const slotDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0)
-    return (slotDate - new Date()) / (1000 * 60 * 60) >= 72
-  }
+  const weekDates = getWeekDates(weekOffset)
 
   function getSlotBooking(date, time) {
     const dateStr = getDateStr(date)
@@ -100,7 +62,10 @@ function Calendar() {
     )
   }
 
-  function getSlotStyle(booking, date, time) {
+    function handleGetSlotStyle(di, ti) {
+    const date = weekDates[di]
+    const time = TIME_SLOTS[ti].value
+    const booking = getSlotBooking(date, time)
     if (!booking) {
       if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) {
         return slotStyles.unavailable
@@ -113,7 +78,10 @@ function Calendar() {
     return slotStyles.individualPrimary
   }
 
-  function getSlotLabel(booking, date, time) {
+  function handleGetSlotLabel(di, ti) {
+    const date = weekDates[di]
+    const time = TIME_SLOTS[ti].value
+    const booking = getSlotBooking(date, time)
     if (!booking) {
       if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) return '🔒'
       return ''
@@ -125,12 +93,18 @@ function Calendar() {
     return `${booking.booked_by || 'Taken'}\n${booking.slot_category || 'primary'}`
   }
 
-  function getWeekRange(date) {
-    const day = date.getDay()
-    const daysSinceMonday = (day + 6) % 7
-    const weekMonday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday)
-    const weekSunday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday + 6, 23, 59, 59)
-    return { weekMonday, weekSunday }
+  function getSelectedSlotForGrid() {
+    if (selectedSlot) {
+      const di = weekDates.findIndex(d => getDateStr(d) === getBookingDateStr(selectedSlot.slot_date))
+      const ti = TIME_SLOTS.findIndex(t => t.value === selectedSlot.slot_time?.slice(0, 5))
+      if (di !== -1 && ti !== -1) return { d: di, t: ti }
+    }
+    if (selectedAvailableSlot) {
+      const di = weekDates.findIndex(d => getDateStr(d) === getDateStr(selectedAvailableSlot.date))
+      const ti = TIME_SLOTS.findIndex(t => t.value === selectedAvailableSlot.time)
+      if (di !== -1 && ti !== -1) return { d: di, t: ti }
+    }
+    return null
   }
 
   function hasPrimaryThisWeek(date) {
@@ -151,8 +125,11 @@ function Calendar() {
     return !hasPrimaryThisWeek(booking.date)
   }
 
-  function handleSlotClick(date, time) {
+  function handleSlotClick(di, ti) {
+    const date = weekDates[di]
+    const time = TIME_SLOTS[ti].value
     const booking = getSlotBooking(date, time)
+    
     setBookingError('')
     setBookingSuccess(false)
     setCancelSuccess(false)
@@ -397,7 +374,7 @@ function Calendar() {
                 })}
               </p>
               <p className="text-xs text-navy opacity-60 mt-0.5">
-                {timeSlots.find(t => t.value === selectedAvailableSlot.time)?.label}
+                {TIME_SLOTS.find(t => t.value === selectedAvailableSlot.time)?.label}
               </p>
             </div>
             <div className="mb-4">
@@ -489,61 +466,14 @@ function Calendar() {
         </div>
 
         {/* calendar grid */}
-        <Card className="p-4 mb-6 overflow-x-auto">
-          <div style={{ minWidth: '500px' }}>
-            <div className="grid gap-1" style={{ gridTemplateColumns: '50px repeat(7, 1fr)' }}>
-              <div></div>
-              {weekDates.map((d, i) => (
-                <div key={i} className="text-center pb-2">
-                  <p className="text-xs font-medium text-navy opacity-50">{days[i]}</p>
-                  <p className="text-xs text-navy opacity-30">{d.getDate()}</p>
-                </div>
-              ))}
-              {timeSlots.map(slot => (
-                <React.Fragment key={slot.value}>
-                  <div className="flex items-center justify-end pr-2">
-                    <span className="text-xs text-navy opacity-40">{slot.label}</span>
-                  </div>
-                  {weekDates.map((date, di) => {
-                    const booking = getSlotBooking(date, slot.value)
-                    const isSelected =
-                      (selectedSlot &&
-                        getBookingDateStr(selectedSlot.slot_date) === getDateStr(date) &&
-                        selectedSlot.slot_time?.slice(0, 5) === slot.value) ||
-                      (selectedAvailableSlot &&
-                        getDateStr(selectedAvailableSlot.date) === getDateStr(date) &&
-                        selectedAvailableSlot.time === slot.value)
-                    const label = getSlotLabel(booking, date, slot.value)
-                    const lines = label.split('\n')
-
-                    return (
-                      <div
-                        key={`${di}-${slot.value}`}
-                        onClick={() => handleSlotClick(date, slot.value)}
-                        className={`rounded min-h-[36px] flex flex-col items-center justify-center transition-all ${getSlotStyle(booking, date, slot.value)} ${isSelected ? 'ring-2 ring-navy' : ''}`}
-                      >
-                        {lines.map((line, li) => (
-                          <span
-                            key={li}
-                            style={{
-                              fontSize: '9px',
-                              color: '#09122C',
-                              lineHeight: '1.3',
-                              textAlign: 'center',
-                              padding: '0 2px',
-                              opacity: li === 1 ? 0.6 : 1
-                            }}
-                          >
-                            {line}
-                          </span>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
+        <Card className="p-4 mb-6">
+          <SlotGrid
+            weekDates={weekDates}
+            getSlotStyle={handleGetSlotStyle}
+            getSlotLabel={handleGetSlotLabel}
+            onSlotClick={handleSlotClick}
+            selectedSlot={getSelectedSlotForGrid()}
+        />
         </Card>
 
         <Button
