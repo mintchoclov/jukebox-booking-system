@@ -191,30 +191,16 @@ router.post('/book', (req, res) => {
         }
 
         const user = userResults[0]
-/*
-if user status is not approved, then they cannot log in, hence this block is redundant 
+
+//if user status is not approved, then they cannot log in, hence this block is redundant
+// to prevent other user from using commandlines to do the bookings, maybe it is useful to add??
         if (user.status !== 'approved') {
            return res.status(403).json({
               message: 'Only approved users can book self-practice slots.'
            })
         }
-*/
-/*
-all members should be allowed to book self-practice slots, including band leaders and admins
-        if (user.role !== 'individual') {
-           return res.status(403).json({
-              message: 'Only individual users can book self-practice slots.'
-           })
-        }
-*/
-/*
-        // this line maybe a bit extra? cuz every user should be ME-certified and approved by admin
-        if (!user.is_mr_certified) {
-           return res.status(403).json({
-               message: 'Only MR-certified users can book self-practice slots.'
-           })
-        }
-*/
+
+
         const checkSlotSql = `
               SELECT *
               FROM bookings
@@ -286,7 +272,7 @@ all members should be allowed to book self-practice slots, including band leader
                             slot_time,
                             status
                           )
-                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
+                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'pending')
                      `
 
                       db.query(
@@ -306,9 +292,9 @@ all members should be allowed to book self-practice slots, including band leader
                             }
 
                             res.json({
-                                message: 'Self-practice booking request submitted successfully.',
+                                message: 'Self-practice booking request submitted successfully, pending admin approval.',
                                 booking_id: result.insertId,
-                                status: 'confirmed',
+                                status: 'pending',
                                 slot_time
                             })
                          }

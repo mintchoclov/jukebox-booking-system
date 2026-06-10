@@ -12,6 +12,13 @@ const app = express()
 require('./telebot')
 require('./schedule')
 
+/*
+// disable telegram bot on local
+if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
+  require('./telebot')
+}
+*/
+
 
 app.use(cors({
   origin: true,
