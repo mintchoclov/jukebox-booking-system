@@ -200,7 +200,6 @@ router.post('/book', (req, res) => {
            })
         }
 
-
         const checkSlotSql = `
               SELECT *
               FROM bookings
@@ -230,7 +229,7 @@ router.post('/book', (req, res) => {
                 WHERE user_id = ?
                     AND booking_type = 'individual'
                     AND slot_category = 'primary'
-                    AND status IN ('pending', 'confirmed')
+                    AND status = 'confirmed'
                     AND slot_date BETWEEN ? AND ?
                `
 
@@ -272,7 +271,7 @@ router.post('/book', (req, res) => {
                             slot_time,
                             status
                           )
-                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'pending')
+                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
                      `
 
                       db.query(
@@ -294,7 +293,7 @@ router.post('/book', (req, res) => {
                             res.json({
                                 message: 'Self-practice booking request submitted successfully, pending admin approval.',
                                 booking_id: result.insertId,
-                                status: 'pending',
+                                status: 'confirmed',
                                 slot_time
                             })
                          }
@@ -363,6 +362,87 @@ router.get('/view-my-bookings', (req, res) => {
 
 
 
+// GET /api/individual/view-my-band-bookings
+// user views confirmed band bookings for the band they belong to
+router.get('/view-my-band-bookings', (req, res) => {
+    const { user_id } = req.query
+
+    if (!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required.'
+        })
+    }
+
+    const userSql = `
+        SELECT
+            id,
+            username,
+            band_id
+        FROM users
+        WHERE id = ?
+    `
+
+    db.query(userSql, [user_id], (userErr, userResults) => {
+        if (userErr) {
+            console.error(userErr)
+            return res.status(500).json({
+                message: 'Failed to check user band.'
+            })
+        }
+
+        if (userResults.length === 0) {
+            return res.status(404).json({
+                message: 'User not found.'
+            })
+        }
+
+        const user = userResults[0]
+
+        if (!user.band_id) {
+            return res.status(400).json({
+                message: 'This user is not linked to any band.'
+            })
+        }
+
+        const bookingSql = `
+            SELECT
+                bookings.id,
+                bookings.band_id,
+                bands.name AS band_name,
+                bookings.booking_type,
+                bookings.slot_date,
+                bookings.slot_time,
+                bookings.allocation_score,
+                bookings.status,
+                bookings.created_at
+            FROM bookings
+            LEFT JOIN bands ON bookings.band_id = bands.id
+            WHERE bookings.band_id = ?
+              AND bookings.booking_type = 'band'
+              AND bookings.status = 'confirmed'
+            ORDER BY bookings.slot_date, bookings.slot_time
+        `
+
+        db.query(bookingSql, [user.band_id], (bookingErr, bookings) => {
+            if (bookingErr) {
+                console.error(bookingErr)
+                return res.status(500).json({
+                    message: 'Failed to fetch band bookings.'
+                })
+            }
+
+            res.json(bookings)
+        })
+    })
+})
+
+
+
+
+
+
+
+
 
 
 // POST /api/individual/cancel-booking
@@ -413,7 +493,7 @@ router.post('/cancel-booking', (req, res) => {
             })
         }
 
-        // Step 2: Check 72-hour cancellation rule
+        // step 2: Check 72-hour cancellation rule
         const atLeast72HoursBefore = isAtLeast72HrsBefore(
             booking.slot_date,
             booking.slot_time
@@ -422,7 +502,7 @@ router.post('/cancel-booking', (req, res) => {
         const newStatus = atLeast72HoursBefore ? 'cancelled' : 'late_cancelled'
         const isLateCancellation = !atLeast72HoursBefore
 
-        // Step 3: Update booking status
+        // step 3: Update booking status
         const updateSql = `
             UPDATE bookings
             SET

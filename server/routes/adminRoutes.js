@@ -170,6 +170,12 @@ router.post('/run-allocation', (req, res) => {
 
 
 
+
+
+
+
+
+
   // Admin confirm booking for winner
   // POST /api/admin/confirm-booking
   router.post('/confirm-booking', (req, res) => {
@@ -244,6 +250,12 @@ router.post('/run-allocation', (req, res) => {
 
 
 
+
+
+
+
+
+
   // Admin able to check the confirmed bookings
   // GET /api/admin/bookings
   router.get('/bookings', (req, res) => {
@@ -286,7 +298,133 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-  // Admin approve, 一个大块， contain 3 diff apis
+
+    // admin updates user role
+    // POST /api/admin/update-user-role
+    router.post('/update-user-role', (req, res) => {
+        const { user_id, role} = req.body
+        const validRoles = ['admin', 'band', 'individual']
+
+        if(!user_id || !role){
+            return res.status(400).json({
+                message: 'Invalid role, Role must be one of admin, band or individual.'
+            })
+        }
+        const sql = `
+            UPDATE users
+            SET role = ?
+            WHERE id = ?
+        `
+
+        db.query(sql, [role, user_id], (err, result) => {
+            if(err) {
+                console.error(err)
+                return res.status(500).json({
+                    message: 'Failed to update user role'
+                })
+            }
+
+            if(result.affectedRows === 0) {
+                return res.status(404).json({
+                    message: 'User NOT found.'
+                })
+            }
+
+            res.json({
+                message:'User role is updated successfully!'
+                user_id,
+                role
+            })
+        })
+
+    })
+
+
+
+
+
+    // admin links a user to a band --> allow user to see their band slot
+    // POST /api/admin/update-user-band
+    router.post('/update-user-band', (req, res) => {
+        const { user_id, band_id} = req.body
+        if(!user_id) {
+            return res.status(400).json({
+                message: 'user_id is required.'
+            })
+        }
+
+        const sql = `
+            UPDATE users
+            SET band_id = ?
+            WHERE id = ?
+        `
+
+        db,query(sql, [band_id || null, user_id], (err, result) => {
+            if(err) {
+                console.error(err)
+                return res.status(500).json({
+                    message: 'Failed tp update user band.'
+                })
+            }
+
+            if(result.affectedRoles === 0){
+                return res.status(404).json({
+                    message: 'User NOT found.'
+                })
+            }
+
+            res.json({
+                message: 'User band updated successfully!'
+                user_id,
+                band_id: band_id || null
+            })
+
+        })
+
+    })
+
+
+
+
+
+
+
+
+    // admin view all users
+    // GET /api/admin/users
+    router.get('/users', (req,res) => {
+        const sql = `
+            SELECT
+                users.id,
+                users.username,
+                users.email,
+                users.role,
+                users.status,
+                //users.is_mr_certified
+                users.band_id,
+                bands.name AS band_name
+            FROM users
+            LEFT JOIN bands ON users.band_id = band_id
+            ORDER BY users.id DESC
+        `
+
+        db.query(sql, (err, results) => {
+            if(err) {
+                console.error(err)
+                return res.status(500).json({
+                    message: 'Failed to fetch users.'
+                })
+            }
+            res.json(results)
+        })
+
+    })
+
+
+
+
+
+
 
   // admin viewing pending sign-up requests
   // GET /api/admin/pending-users
@@ -316,6 +454,10 @@ router.post('/run-allocation', (req, res) => {
         res.json(results)
     })
   })
+
+
+
+
 
 
 
@@ -388,7 +530,6 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-
     // admin rejects a pending signup request
     // POST /api/admin/reject-user
     router.post('/reject-user', (req, res) => {
@@ -428,6 +569,12 @@ router.post('/run-allocation', (req, res) => {
             })
         })
     })
+
+
+
+
+
+
 
 
 
