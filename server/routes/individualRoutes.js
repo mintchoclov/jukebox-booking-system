@@ -115,7 +115,7 @@ function isSelfPracticeWindowOpen(slotDate) {
 
 
 
-
+// No.1
 //POST /api/individual/book
 router.post('/book', (req, res) => {
     const {
@@ -128,181 +128,271 @@ router.post('/book', (req, res) => {
 
     if (!user_id || !slot_date || !req.body.slot_time || !slot_category) {
         return res.status(400).json({
-          message: 'user_id, slot_date, slot_time, and slot_category are required.'
+            message: 'user_id, slot_date, slot_time, and slot_category are required.'
         })
     }
 
-    // validate slot_date, prevent frontend passing in invalid date
+    // Validate slot_date
     const parsedSlotDate = new Date(slot_date)
-
     if (Number.isNaN(parsedSlotDate.getTime())) {
         return res.status(400).json({
             message: 'Invalid slot_date.'
         })
     }
 
+    // Validate slot_category
     if (!['primary', 'extra'].includes(slot_category)) {
         return res.status(400).json({
-          message: 'slot_category must be primary or extra.'
+            message: 'slot_category must be primary or extra.'
         })
     }
 
+    // Validate slot_time
     if (!slot_time || !validSlotTimes.includes(slot_time)) {
         return res.status(400).json({
-          message: 'Invalid slot time. Slot must be a valid 2-hour block.'
+            message: 'Invalid slot time. Slot must be a valid 2-hour block.'
         })
     }
 
+    // Self-practice booking window: Friday 12am for following week
     if (!isSelfPracticeWindowOpen(slot_date)) {
         return res.status(400).json({
-          message: 'Self-practice booking window has not opened for this week.'
-        })
-      }
-
-    if (!isAtLeast72HrsBefore(slot_date, slot_time)) {
-        return res.status(400).json({
-          message: 'Self-practice bookings must be made at least 72 hours before the slot starts.'
+            message: 'Self-practice booking window has not opened for this week.'
         })
     }
 
-     const userSql = `
+    // 72-hour advance rule
+    if (!isAtLeast72HrsBefore(slot_date, slot_time)) {
+        return res.status(400).json({
+            message: 'Self-practice bookings must be made at least 72 hours before the slot starts.'
+        })
+    }
+
+    // Common insert SQL for confirmed individual booking
+    const insertSql = `
+        INSERT INTO bookings
+        (
+            band_id,
+            user_id,
+            booking_type,
+            slot_category,
+            slot_date,
+            slot_time,
+            status
+        )
+        VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
+    `
+
+    // Step 1: Check user
+    const userSql = `
         SELECT
-          id,
-          username,
-          role,
-          status,
-          is_mr_certified
+            id,
+            username,
+            role,
+            status,
+            is_mr_certified
         FROM users
         WHERE id = ?
-     `
+    `
 
-     db.query(userSql, [user_id], (userErr, userResults) => {
+    db.query(userSql, [user_id], (userErr, userResults) => {
         if (userErr) {
-           console.error(userErr)
-           return res.status(500).json({
-             message: 'Failed to check user.'
-           })
+            console.error(userErr)
+            return res.status(500).json({
+                message: 'Failed to check user.'
+            })
         }
 
         if (userResults.length === 0) {
-           return res.status(404).json({
-             message: 'User not found.'
-           })
+            return res.status(404).json({
+                message: 'User not found.'
+            })
         }
 
         const user = userResults[0]
 
-//if user status is not approved, then they cannot log in, hence this block is redundant
-// to prevent other user from using commandlines to do the bookings, maybe it is useful to add??
+        // Keep this check to prevent direct API calls by non-approved users
         if (user.status !== 'approved') {
-           return res.status(403).json({
-              message: 'Only approved users can book self-practice slots.'
-           })
+            return res.status(403).json({
+                message: 'Only approved users can book self-practice slots.'
+            })
         }
 
-        const checkSlotSql = `
-              SELECT *
-              FROM bookings
-              WHERE slot_date = ?
-                AND slot_time = ?
+        // Step 2: Check whether this user already has a primary slot this week
+        const { weekMonday, weekSunday } = getWeekRange(slot_date)
+
+        const primarySql = `
+            SELECT *
+            FROM bookings
+            WHERE user_id = ?
+                AND booking_type = 'individual'
+                AND slot_category = 'primary'
                 AND status = 'confirmed'
+                AND slot_date BETWEEN ? AND ?
         `
 
-        db.query(checkSlotSql, [slot_date, slot_time], (slotErr, existingBookings) => {
-              if (slotErr) {
-                console.error(slotErr)
-                return res.status(500).json({
-                  message: 'Failed to check slot availability.'
-                })
-              }
+        db.query(
+            primarySql,
+            [
+                user_id,
+                toMysqlDate(weekMonday),
+                toMysqlDate(weekSunday)
+            ],
+            (primaryErr, primaryResults) => {
+                if (primaryErr) {
+                    console.error(primaryErr)
+                    return res.status(500).json({
+                        message: 'Failed to check primary slot rule.'
+                    })
+                }
 
-               if (existingBookings.length > 0) {
-                  return res.status(400).json({
-                   message: 'This slot is already booked.'
-                  })
-               }
+                const userHasPrimary = primaryResults.length > 0
 
-               const { weekMonday, weekSunday} = getWeekRange(slot_date)
-               const primarySql = `
-                SELECT *
-                FROM bookings
-                WHERE user_id = ?
-                    AND booking_type = 'individual'
-                    AND slot_category = 'primary'
-                    AND status = 'confirmed'
-                    AND slot_date BETWEEN ? AND ?
-               `
+                // Rule 1: user cannot book second primary slot in the same week
+                if (slot_category === 'primary' && userHasPrimary) {
+                    return res.status(400).json({
+                        message: 'This user already has a primary slot for this week. Please try to book an extra slot instead.'
+                    })
+                }
 
-               db.query(
-                primarySql,
-                [
-                    user_id,
-                    toMysqlDate(weekMonday),
-                    toMysqlDate(weekSunday)
-                ],
-                (primaryErr, primaryResults) => {
-                    if(primaryErr) {
-                        console.error(primaryErr)
+                // Rule 2: user cannot book extra before having a primary
+                if (slot_category === 'extra' && !userHasPrimary) {
+                    return res.status(400).json({
+                        message: 'You must book a primary slot before booking extra slots for this week.'
+                    })
+                }
+
+                // Step 3: Check whether target slot is already occupied
+                const checkSlotSql = `
+                    SELECT *
+                    FROM bookings
+                    WHERE slot_date = ?
+                        AND slot_time = ?
+                        AND status = 'confirmed'
+                `
+
+                db.query(checkSlotSql, [slot_date, slot_time], (slotErr, existingBookings) => {
+                    if (slotErr) {
+                        console.error(slotErr)
                         return res.status(500).json({
-                            message: 'Failed to check primary slot rule.'
+                            message: 'Failed to check slot availability.'
                         })
                     }
 
-                    if (slot_category === 'primary' && primaryResults.length > 0) {
-                       return res.status(400).json({
-                           message: 'This user already has a primary slot for this week. Please try to book an extra slot instead.'
-                       })
+                    const existingBooking = existingBookings[0] || null
+
+                    // Case A: slot is empty, normal booking
+                    if (!existingBooking) {
+                        return db.query(
+                            insertSql,
+                            [
+                                user_id,
+                                slot_category,
+                                slot_date,
+                                slot_time
+                            ],
+                            (insertErr, result) => {
+                                if (insertErr) {
+                                    console.error(insertErr)
+                                    return res.status(500).json({
+                                        message: 'Failed to create self-practice booking.'
+                                    })
+                                }
+
+                                return res.json({
+                                    message: 'Self-practice booking confirmed successfully!',
+                                    booking_id: result.insertId,
+                                    status: 'confirmed',
+                                    slot_time
+                                })
+                            }
+                        )
                     }
 
-                    if (slot_category === 'extra' && primaryResults.length === 0) {
-                       return res.status(400).json({
-                           message: 'You must book a primary slot before booking extra slots for this week.'
-                       })
+                    // Case B: band booking cannot be displaced
+                    if (existingBooking.booking_type === 'band') {
+                        return res.status(400).json({
+                            message: 'This slot is already booked by a band.'
+                        })
                     }
 
-                     const insertSql = `
-                          INSERT INTO bookings
-                          (
-                            band_id,
-                            user_id,
-                            booking_type,
-                            slot_category,
-                            slot_date,
-                            slot_time,
-                            status
-                          )
-                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
-                     `
+                    // Case C: another user's primary slot cannot be displaced
+                    if (
+                        existingBooking.booking_type === 'individual' &&
+                        existingBooking.slot_category === 'primary'
+                    ) {
+                        return res.status(400).json({
+                            message: 'This slot is already booked as another user primary slot.'
+                        })
+                    }
 
-                      db.query(
-                         insertSql,
-                         [
-                           user_id,
-                           slot_category,
-                           slot_date,
-                           slot_time
-                         ],
-                         (insertErr, result) => {
-                            if (insertErr) {
-                               console.error(insertErr)
-                               return res.status(500).json({
-                                   message: 'Failed to create self-practice booking.'
-                               })
+                    // Case D: another user's extra slot can be displaced
+                    if (
+                        existingBooking.booking_type === 'individual' &&
+                        existingBooking.slot_category === 'extra'
+                    ) {
+                        // Only a user without primary can displace an extra slot,
+                        // and the new booking must be primary.
+                        if (slot_category !== 'primary' || userHasPrimary) {
+                            return res.status(400).json({
+                                message: 'This extra slot can only be displaced by a user without a primary slot.'
+                            })
+                        }
+
+                        const displaceSql = `
+                            UPDATE bookings
+                            SET status = 'displaced'
+                            WHERE id = ?
+                        `
+
+                        db.query(displaceSql, [existingBooking.id], (displaceErr) => {
+                            if (displaceErr) {
+                                console.error(displaceErr)
+                                return res.status(500).json({
+                                    message: 'Failed to displace existing extra booking.'
+                                })
                             }
 
-                            res.json({
-                                message: 'Self-practice booking confirmed successfully!',
-                                booking_id: result.insertId,
-                                status: 'confirmed',
-                                slot_time
-                            })
-                         }
-                      )
-                }
+                            db.query(
+                                insertSql,
+                                [
+                                    user_id,
+                                    'primary',
+                                    slot_date,
+                                    slot_time
+                                ],
+                                (insertErr, result) => {
+                                    if (insertErr) {
+                                        console.error(insertErr)
+                                        return res.status(500).json({
+                                            message: 'Failed to create self-practice booking.'
+                                        })
+                                    }
+
+                                    return res.json({
+                                        message: 'Extra slot displaced successfully! Primary booking confirmed!',
+                                        displaced_booking_id: existingBooking.id,
+                                        booking_id: result.insertId,
+                                        status: 'confirmed',
+                                        slot_category: 'primary',
+                                        slot_time
+                                    })
+                                }
+                            )
+                        })
+
+                        return
+                    }
+
+                    // Fallback
+                    return res.status(400).json({
+                        message: 'This slot is already booked.'
+                    })
+                })
+            }
         )
-     })
-   })
- })
+    })
+})
 
 
 
@@ -311,7 +401,7 @@ router.post('/book', (req, res) => {
 
 
 
-
+// No.2
 //GET  /api/individual/view-my-bookings
 // individual user views their own self-practice bookings
 // phase 1 , directly book, directly insert in mysql and make status == confirmed
@@ -361,7 +451,7 @@ router.get('/view-my-bookings', (req, res) => {
 
 
 
-
+//No.3
 // GET /api/individual/view-my-band-bookings
 // user views confirmed band bookings for the band they belong to
 router.get('/view-my-band-bookings', (req, res) => {
@@ -444,7 +534,7 @@ router.get('/view-my-band-bookings', (req, res) => {
 
 
 
-
+//NO.3
 // POST /api/individual/cancel-booking
 // Individual users cancel their own self-practice booking
 // Cancellation does NOT need admin approval.

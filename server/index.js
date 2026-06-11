@@ -8,17 +8,18 @@ const adminRoutes = require('./routes/adminRoutes')
 const individualRoutes = require('./routes/individualRoutes')
 const app = express()
 
-// telegram bot and schedule
-require('./telebot')
-require('./schedule')
 
-/*
 // disable telegram bot on local
 if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
   require('./telebot')
 }
-*/
 
+if (process.env.ENABLE_SCHEDULE_JOBS === 'true') {
+  require('./schedule')
+}
+// telegram bot and schedule
+//require('./telebot')
+//require('./schedule')
 
 app.use(cors({
   origin: true,

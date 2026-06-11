@@ -1,8 +1,25 @@
-const bot = require('./telebot')
+//const bot = require('./telebot')
 const db = require('./db')
+
+// enable local testing, control using .env variable
+let bot = null
+if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
+    bot = require('./telebot')
+}
+
+// helper function, prevent telegram bot being called during local testing
+function isTelegramEnabled() {
+    return bot !== null
+}
+
+
 
 // band notifs
 function notifyBiddingOpen() {
+  if (!isTelegramEnabled()) {
+      console.log('Telegram bot disabled. Skip notifyBiddingOpen.')
+      return
+  }
   const sql = `
     SELECT u.telegram_chat_id, b.name as band_name
     FROM users u
@@ -18,6 +35,10 @@ function notifyBiddingOpen() {
 }
 
 function notifyBiddingDeadlineReminder() {
+  if (!isTelegramEnabled()) {
+      console.log('Telegram bot disabled. Skip notifyBiddingOpen.')
+      return
+  }
   const sql = `
     SELECT u.telegram_chat_id, b.name as band_name
     FROM users u
@@ -172,6 +193,10 @@ function notifyDehumidifierBump(userId) {
 }
 
 function notifyAccountApproved(userId) {
+  if (!isTelegramEnabled()) {
+      console.log('Telegram bot disabled. Skip notifyBiddingOpen.')
+      return
+  }
   const sql = `
     SELECT telegram_chat_id, username
     FROM users
@@ -231,6 +256,10 @@ function notifyAdminDehumidifierMissing(userId, slotDate) {
 }
 
 function notifyAdminNewUser(username, email) {
+  if (!isTelegramEnabled()) {
+      console.log('Telegram bot disabled. Skip notifyBiddingOpen.')
+      return
+  }
   const sql = `
     SELECT telegram_chat_id
     FROM users
