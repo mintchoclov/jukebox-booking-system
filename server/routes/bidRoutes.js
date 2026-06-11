@@ -47,103 +47,59 @@ function normalizeSlotTime(slotTime) {
     '22:00'
   ]
 
+// helper functions for rank calculation:
+function getBidValueFromRank(rank) {
+  if (Number(rank) === 1) return 3
+  if (Number(rank) === 2) return 2
+  if (Number(rank) === 3) return 1
+  return 0
+}
+
+// helper function checking whether the submitted slots are of the same week
+function getWeekRange(slotDate) {
+  const targetDate = new Date(slotDate)
+
+  const day = targetDate.getDay()
+  const daysSinceMonday = (day + 6) % 7
+
+  const weekMonday = new Date(targetDate)
+  weekMonday.setDate(targetDate.getDate() - daysSinceMonday)
+  weekMonday.setHours(0, 0, 0, 0)
+
+  const weekSunday = new Date(weekMonday)
+  weekSunday.setDate(weekMonday.getDate() + 6)
+  weekSunday.setHours(23, 59, 59, 999)
+
+  return { weekMonday, weekSunday }
+}
+
+
+// transform to mysql date format
+function toMysqlDate(dateObj) {
+  return dateObj.toISOString().slice(0, 10)
+}
 
 
 
-// 提交bids POST /api/bids --> single bids
+// NO.1
+// POST /api/bids
+// Single bid submission is disabled in MS2, prevent bands from submitting bids one by one
+// Band leaders must submit EXACTLY 3 ranked bids together through /api/bids/weekly.
 router.post('/', (req, res) => {
-  const {
-    band_id,
-    slot_date,
-    preference_rank,
-    bid_value
-  } = req.body
-
-  const slot_time = normalizeSlotTime(req.body.slot_time)
-
-
- if (!slot_time || !validSlotTimes.includes(slot_time)) {
-   return res.status(400).json({
-     message: 'Invalid slot time. Slot must be a valid 2-hour block.'
-   })
- }
-
-
-  if (!slot_time || !validSlotTimes.includes(slot_time)) {
-    return res.status(400).json({
-      message: 'Invalid slot time. Slot must be a valid 2-hour block.'
-    })
-  }
-
-  // SQL query
-  const sql = `
-    INSERT INTO bids
-    (band_id, slot_date, slot_time, preference_rank, bid_value)
-    VALUES (?, ?, ?, ?, ?)
-  `
-
-  // 执行 SQL
-  db.query(
-    sql,
-    [band_id, slot_date, slot_time, preference_rank, bid_value],
-
-    (err, result) => {
-
-      // SQL 出错
-      if (err) {
-        if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
-          return res.status(400).json({
-            message: 'This band has already submitted a bid for this slot.'
-          })
-        }
-
-        console.error(err)
-
-        return res.status(500).json({
-          message: 'Failed to submit bid'
-        })
-      }
-
-      // 成功
-      res.json({
-        message: 'Bid submitted successfully'
-      })
-    }
-  )
+  return res.status(410).json({
+    message: 'Single bid submission is disabled. Please use /api/bids/weekly.'
+  })
 })
 
 
+
+
+
+
+//NO.2
 // 提交一整周的 3 个 ranked bids --> fulfil bidding logic
 // POST /api/bids/weekly
 router.post('/weekly', (req, res) => {
-
-  /*
-    Expected JSON from frontend:
-    {
-      "band_id": 1,
-      "bids": [
-        {
-          "slot_date": "2026-05-10",
-          "slot_time": "20:00",
-          "preference_rank": 1,
-          "bid_value": 3
-        },
-        {
-          "slot_date": "2026-05-11",
-          "slot_time": "18:00",
-          "preference_rank": 2,
-          "bid_value": 2
-        },
-        {
-          "slot_date": "2026-05-12",
-          "slot_time": "22:00",
-          "preference_rank": 3,
-          "bid_value": 1
-        }
-      ]
-    }
-  */
-
   const { band_id, bids } = req.body
 
   // Check that bids is an array
@@ -159,16 +115,6 @@ router.post('/weekly', (req, res) => {
       message: 'A band must submit exactly 3 ranked choices'
     })
   }
-  const validSlotTimes = [
-    '08:00',
-    '10:00',
-    '12:00',
-    '14:00',
-    '16:00',
-    '18:00',
-    '20:00',
-    '22:00'
-  ]
 
   const seenRanks = new Set()
   const seenSlots = new Set()
@@ -264,7 +210,7 @@ router.post('/weekly', (req, res) => {
     bid.slot_date,
     normalizeSlotTime(bid.slot_time),
     bid.preference_rank,
-    bid.bid_value
+    getBidValueFromRank(bid.preference_rank)
   ])
 
   db.query(sql, [values], (err, result) => {
@@ -290,8 +236,9 @@ router.post('/weekly', (req, res) => {
 })
 
 
-
-// 查看所有bids GET /api/bids --> get all bids
+//NO.3
+// 查看所有bids
+//GET /api/bids --> get all bids
 router.get('/', (req, res) => {
 
 // new version: admin can now see band_name(not only band_id)
