@@ -331,7 +331,7 @@ router.post('/run-allocation', (req, res) => {
             }
 
             res.json({
-                message:'User role is updated successfully!'
+                message:'User role is updated successfully!',
                 user_id,
                 role
             })
@@ -361,7 +361,7 @@ router.post('/run-allocation', (req, res) => {
             WHERE id = ?
         `
 
-        db,query(sql, [band_id || null, user_id], (err, result) => {
+        db.addListener.query(sql, [band_id || null, user_id], (err, result) => {
             if(err) {
                 console.error(err)
                 return res.status(500).json({
@@ -376,7 +376,7 @@ router.post('/run-allocation', (req, res) => {
             }
 
             res.json({
-                message: 'User band updated successfully!'
+                message: 'User band updated successfully!',
                 user_id,
                 band_id: band_id || null
             })
