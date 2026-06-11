@@ -361,7 +361,7 @@ router.post('/run-allocation', (req, res) => {
             WHERE id = ?
         `
 
-        db.addListener.query(sql, [band_id || null, user_id], (err, result) => {
+        db.query(sql, [band_id || null, user_id], (err, result) => {
             if(err) {
                 console.error(err)
                 return res.status(500).json({
