@@ -291,7 +291,7 @@ router.post('/book', (req, res) => {
                             }
 
                             res.json({
-                                message: 'Self-practice booking request submitted successfully, pending admin approval.',
+                                message: 'Self-practice booking confirmed successfully!',
                                 booking_id: result.insertId,
                                 status: 'confirmed',
                                 slot_time
