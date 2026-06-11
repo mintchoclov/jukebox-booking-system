@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     slot_date DATE NOT NULL,
     slot_time TIME NOT NULL,
     allocation_score INT,
-    status ENUM('pending', 'confirmed', 'rejected', 'cancelled', 'late_cancelled') DEFAULT 'pending',
+    status ENUM('pending', 'confirmed', 'rejected', 'cancelled', 'late_cancelled', 'displaced') DEFAULT 'pending',
     reject_reason VARCHAR(255),
     cancel_reason VARCHAR(255),
     cancelled_at TIMESTAMP NULL,

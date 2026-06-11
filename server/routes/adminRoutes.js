@@ -369,7 +369,7 @@ router.post('/run-allocation', (req, res) => {
                 })
             }
 
-            if(result.affectedRoles === 0){
+            if(result.affectedRows === 0){
                 return res.status(404).json({
                     message: 'User NOT found.'
                 })
@@ -402,11 +402,10 @@ router.post('/run-allocation', (req, res) => {
                 users.email,
                 users.role,
                 users.status,
-                //users.is_mr_certified
                 users.band_id,
                 bands.name AS band_name
             FROM users
-            LEFT JOIN bands ON users.band_id = band_id
+            LEFT JOIN bands ON users.band_id = bands.id
             ORDER BY users.id DESC
         `
 
@@ -466,7 +465,7 @@ router.post('/run-allocation', (req, res) => {
 
   // admin approves a pending signup request
   //POST /api/admin/approve-user
-  router.post('/approved-user', (req,res) => {
+  router.post('/approve-user', (req,res) => {
     const { user_id, role, is_mr_certified } = req.body
 
     const validRoles = [ 'admin', 'band', 'individual']
@@ -559,7 +558,7 @@ router.post('/run-allocation', (req, res) => {
                 })
             }
 
-            if(result.affectRows === 0) {
+            if(result.affectedRows === 0) {
                 return res.status(404).json({
                     message: 'Pending user NOT found.'
                 })

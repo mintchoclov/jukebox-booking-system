@@ -29,22 +29,29 @@ function normalizeSlotTime(slotTime) {
     '20:00': '20:00',
     '22:00': '22:00'
   }
-  return slotTimeMap[slotTime] || null
+  return slotTimeMap[cleanedSlotTime] || null
 }
+
+
+
+
+// Valid timeslot --> even
+  const validSlotTimes = [
+    '08:00',
+    '10:00',
+    '12:00',
+    '14:00',
+    '16:00',
+    '18:00',
+    '20:00',
+    '22:00'
+  ]
+
+
+
 
 // 提交bids POST /api/bids --> single bids
 router.post('/', (req, res) => {
-
-  // 从前端 JSON 里面取数据， 需要前端配合
-  /*
-  const {
-    band_id,
-    slot_date,
-    slot_time,
-    preference_rank,
-    bid_value
-  } = req.body
-*/
   const {
     band_id,
     slot_date,
@@ -61,17 +68,6 @@ router.post('/', (req, res) => {
    })
  }
 
-  // Valid timeslot --> even
-  const validSlotTimes = [
-    '08:00',
-    '10:00',
-    '12:00',
-    '14:00',
-    '16:00',
-    '18:00',
-    '20:00',
-    '22:00'
-  ]
 
   if (!slot_time || !validSlotTimes.includes(slot_time)) {
     return res.status(400).json({
