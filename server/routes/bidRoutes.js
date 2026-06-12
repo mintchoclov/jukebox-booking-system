@@ -55,7 +55,7 @@ function getBidValueFromRank(rank) {
   return 0
 }
 
-// helper function checking whether the submitted slots are of the same week
+// helper function checking whether the 3 submitted slots are of the same week
 function getWeekRange(slotDate) {
   const targetDate = new Date(slotDate)
 
@@ -81,13 +81,14 @@ function toMysqlDate(dateObj) {
 
 
 
+
 // NO.1
 // POST /api/bids
 // Single bid submission is disabled in MS2, prevent bands from submitting bids one by one
 // Band leaders must submit EXACTLY 3 ranked bids together through /api/bids/weekly.
 router.post('/', (req, res) => {
   return res.status(410).json({
-    message: 'Single bid submission is disabled. Please use /api/bids/weekly.'
+    message: 'Single bid submission is disabled, Please use /api/bids/weekly instead.'
   })
 })
 
@@ -97,10 +98,16 @@ router.post('/', (req, res) => {
 
 
 //NO.2
-// 提交一整周的 3 个 ranked bids --> fulfil bidding logic
+// 提交一整周的 3 个 ranked bids
 // POST /api/bids/weekly
 router.post('/weekly', (req, res) => {
-  const { band_id, bids } = req.body
+  const { band_id, bids } = req.body || {}
+
+  if(!band_id){
+    return res.status(400).json({
+        message: 'band_id is required.'
+    })
+  }
 
   // Check that bids is an array
   if (!Array.isArray(bids)) {
@@ -126,8 +133,15 @@ router.post('/weekly', (req, res) => {
     const { slot_date, preference_rank } = bid
     const slot_time = normalizeSlotTime(bid.slot_time)
 
-     // 把 slot_date 转成 JS Date 对象，用于 ddl checking
-      const slotDate = new Date(slot_date)
+    // 把 slot_date 转成 JS Date 对象，用于 ddl checking
+    const slotDate = new Date(slot_date)
+
+    if (Number.isNaN(slotDate.getTime())) {
+        return res.status(400).json({
+            message: 'Invalid slot_date.'
+        })
+    }
+
 
     // Validate preference_rank
     if (![1, 2, 3].includes(Number(preference_rank))) {
@@ -184,56 +198,100 @@ router.post('/weekly', (req, res) => {
       }
     }
 
-  // Check that ranks are exactly 1, 2, 3
-  if (!seenRanks.has(1) || !seenRanks.has(2) || !seenRanks.has(3)) {
-    return res.status(400).json({
-      message: 'Weekly bids must include rank 1, rank 2, and rank 3'
-    })
-  }
-
-  const sql = `
-    INSERT INTO bids
-    (band_id, slot_date, slot_time, preference_rank, bid_value)
-    VALUES ?
-  `
-/*
-  const values = bids.map((bid) => [
-    band_id,
-    bid.slot_date,
-    bid.slot_time,
-    bid.preference_rank,
-    bid.bid_value
-  ])
-  */
-  const values = bids.map((bid) => [
-    band_id,
-    bid.slot_date,
-    normalizeSlotTime(bid.slot_time),
-    bid.preference_rank,
-    getBidValueFromRank(bid.preference_rank)
-  ])
-
-  db.query(sql, [values], (err, result) => {
-    if (err) {
-      if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
-        return res.status(400).json({
-          message: 'One or more bids already exist for this band and slot'
-        })
-      }
-
-      console.error(err)
-
-      return res.status(500).json({
-        message: 'Failed to submit weekly bids'
+    // Check that ranks are exactly 1, 2, 3
+    if (!seenRanks.has(1) || !seenRanks.has(2) || !seenRanks.has(3)) {
+      return res.status(400).json({
+        message: 'Weekly bids MUST include rank 1, rank 2, and rank 3'
       })
     }
 
-    res.json({
-      message: 'Weekly bids submitted successfully',
-      insertedCount: result.affectedRows
-    })
+    // check that all 3 bids are for the same target week
+    const firstWeek = getWeekRange(bids[0].slot_date)
+    const firstWeekMonday = toMysqlDate(firstWeek.weekMonday)
+
+    for (const bid of bids) {
+      const currentWeek = getWeekRange(bid.slot_date)
+      const currentWeekMonday = toMysqlDate(currentWeek.weekMonday)
+
+      if (currentWeekMonday !== firstWeekMonday) {
+        return res.status(400).json({
+          message: 'All 3 ranked bids must be for the same target week.'
+        })
+      }
+    }
+
+
+    const sql = `
+      INSERT INTO bids
+      (band_id, slot_date, slot_time, preference_rank, bid_value)
+      VALUES ?
+    `
+
+    // backend calculates bid_value based on preference_rank
+    const values = bids.map((bid) => [
+      band_id,
+      bid.slot_date,
+      normalizeSlotTime(bid.slot_time),
+      bid.preference_rank,
+      getBidValueFromRank(bid.preference_rank)
+    ])
+
+    // Prevent the same band from submitting another set of weekly bids for the same target week.
+    const { weekMonday, weekSunday } = getWeekRange(bids[0].slot_date)
+
+    const existingWeeklySql = `
+      SELECT id
+      FROM bids
+      WHERE band_id = ?
+        AND slot_date BETWEEN ? AND ?
+    `
+
+    db.query(
+      existingWeeklySql,
+      [
+        band_id,
+        toMysqlDate(weekMonday),
+        toMysqlDate(weekSunday)
+      ],
+      (existingErr, existingBids) => {
+        if (existingErr) {
+          console.error(existingErr)
+          return res.status(500).json({
+            message: 'Failed to check existing weekly bids.'
+          })
+        }
+
+        if (existingBids.length > 0) {
+          return res.status(400).json({
+            message: 'This band has already submitted weekly bids for this week.'
+          })
+        }
+
+        // insert weekly bids only after duplicate-week check passes
+        db.query(sql, [values], (err, result) => {
+          if (err) {
+            if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
+              return res.status(400).json({
+                message: 'One or more bids already exist for this band and slot!'
+              })
+            }
+
+            console.error(err)
+
+            return res.status(500).json({
+              message: 'Failed to submit weekly bids'
+            })
+          }
+
+          res.json({
+            message: 'Weekly bids submitted successfully',
+            insertedCount: result.affectedRows
+          })
+        })
+      }
+    )
   })
-})
+
 
 
 //NO.3
