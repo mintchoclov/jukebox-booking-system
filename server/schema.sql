@@ -75,3 +75,18 @@ CREATE TABLE IF NOT EXISTS bookings (
     calendar_sync_status ENUM('not_synced', 'synced', 'failed') DEFAULT 'not_synced',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+
+/*
+ target week_monday == the bidding round for this weelk
+ status = open / closed
+ */
+CREATE TABLE IF NOT EXISTS bidding_windows (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    target_week_monday DATE NOT NULL UNIQUE,
+    status ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+    opened_at TIMESTAMP NULL,
+    closed_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );

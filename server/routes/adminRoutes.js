@@ -3,7 +3,232 @@ const router = express.Router()
 const db = require('../db')
 
 
-// Admin run allocation algo
+// date helpers used by adminRoutes
+// avoid toISOString() timezone shifting problems
+// ---------------------------------------------------
+function formatLocalDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function parseMysqlDateOnly(dateValue) {
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    )
+  }
+
+  const dateString = String(dateValue).slice(0, 10)
+  const [year, month, day] = dateString.split('-').map(Number)
+
+  return new Date(year, month - 1, day)
+}
+
+function getWeekRange(slotDate) {
+  const targetDate = parseMysqlDateOnly(slotDate)
+
+  // getDay(): Sunday = 0, Monday = 1, ..., Saturday = 6
+  const day = targetDate.getDay()
+  const daysSinceMonday = (day + 6) % 7
+
+  const weekMonday = new Date(targetDate)
+  weekMonday.setDate(targetDate.getDate() - daysSinceMonday)
+  weekMonday.setHours(0, 0, 0, 0)
+
+  const weekSunday = new Date(weekMonday)
+  weekSunday.setDate(weekMonday.getDate() + 6)
+  weekSunday.setHours(23, 59, 59, 999)
+
+  return { weekMonday, weekSunday }
+}
+
+function toMysqlDate(dateObj) {
+  return formatLocalDate(dateObj)
+}
+
+// Get target week Monday from either target_week_monday or slot_date
+function getTargetWeekMondayFromInput(input) {
+  if (input.target_week_monday) {
+    const parsed = parseMysqlDateOnly(input.target_week_monday)
+
+    if (Number.isNaN(parsed.getTime())) {
+      return null
+    }
+
+    return formatLocalDate(parsed)
+  }
+
+  if (input.slot_date) {
+    const parsed = parseMysqlDateOnly(input.slot_date)
+
+    if (Number.isNaN(parsed.getTime())) {
+      return null
+    }
+
+    const { weekMonday } = getWeekRange(input.slot_date)
+    return toMysqlDate(weekMonday)
+  }
+
+  return null
+}
+
+// Bidding deadline = Thursday 12:00 PM before target week
+function getBiddingDeadlineFromWeekMonday(targetWeekMonday) {
+  const weekMonday = parseMysqlDateOnly(targetWeekMonday)
+
+  const deadline = new Date(weekMonday)
+  deadline.setDate(weekMonday.getDate() - 4)
+  deadline.setHours(12, 0, 0, 0)
+
+  return deadline
+}
+
+
+
+// tell frontend a specific target week bidding status (open/ closed)
+// GET /api/admin/bidding-status
+router.get('/bidding-status', (req, res) => {
+  const targetWeekMonday = getTargetWeekMondayFromInput(req.query)
+
+  if (!targetWeekMonday) {
+    return res.status(400).json({
+      message: 'target_week_monday or slot_date is required.'
+    })
+  }
+
+  const deadline = getBiddingDeadlineFromWeekMonday(targetWeekMonday)
+  const now = new Date()
+
+  const sql = `
+    SELECT
+      target_week_monday,
+      status,
+      opened_at,
+      closed_at
+    FROM bidding_windows
+    WHERE target_week_monday = ?
+  `
+
+  db.query(sql, [targetWeekMonday], (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to fetch bidding status.'
+      })
+    }
+
+    const manualStatus = results.length > 0
+      ? results[0].status
+      : 'open'
+
+    // ddl still applies even if manualStatus is open.
+    const isPastDeadline = now > deadline
+    const isOpen = manualStatus === 'open' && !isPastDeadline
+
+    res.json({
+      target_week_monday: targetWeekMonday,
+      manual_status: manualStatus,
+      deadline: deadline.toISOString(),
+      is_past_deadline: isPastDeadline,
+      is_open: isOpen,
+      is_closed: !isOpen,
+      source: results.length > 0 ? 'manual' : 'default'
+    })
+  })
+})
+
+
+// admin manually open bidding for a targetweek
+// POST /api/admin/open-bidding
+router.post('/open-bidding', (req, res) => {
+  const targetWeekMonday = getTargetWeekMondayFromInput(req.body || {})
+
+  if (!targetWeekMonday) {
+    return res.status(400).json({
+      message: 'target_week_monday or slot_date is required.'
+    })
+  }
+
+  const sql = `
+    INSERT INTO bidding_windows
+    (
+      target_week_monday,
+      status,
+      opened_at,
+      closed_at
+    )
+    VALUES (?, 'open', CURRENT_TIMESTAMP, NULL)
+    ON DUPLICATE KEY UPDATE
+      status = 'open',
+      opened_at = CURRENT_TIMESTAMP,
+      closed_at = NULL
+  `
+
+  db.query(sql, [targetWeekMonday], (err) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to open bidding.'
+      })
+    }
+
+    res.json({
+      message: 'Bidding opened successfully!',
+      target_week_monday: targetWeekMonday,
+      status: 'open'
+    })
+  })
+})
+
+// admin manually close bidding for a targetweek
+// POST /api/admin/close-bidding
+router.post('/close-bidding', (req, res) => {
+  const targetWeekMonday = getTargetWeekMondayFromInput(req.body || {})
+
+  if (!targetWeekMonday) {
+    return res.status(400).json({
+      message: 'target_week_monday or slot_date is required.'
+    })
+  }
+
+  const sql = `
+    INSERT INTO bidding_windows
+    (
+      target_week_monday,
+      status,
+      opened_at,
+      closed_at
+    )
+    VALUES (?, 'closed', NULL, CURRENT_TIMESTAMP)
+    ON DUPLICATE KEY UPDATE
+      status = 'closed',
+      closed_at = CURRENT_TIMESTAMP
+  `
+
+  db.query(sql, [targetWeekMonday], (err) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to close bidding.'
+      })
+    }
+
+    res.json({
+      message: 'Bidding closed successfully.',
+      target_week_monday: targetWeekMonday,
+      status: 'closed'
+    })
+  })
+})
+
+
+
+// admin run allocation algo
 // POST /api/admin/run-allocation
 router.post('/run-allocation', (req, res) => {
   const MAX_SLOTS_PER_BAND_PER_WEEK = 2
@@ -251,93 +476,362 @@ router.post('/run-allocation', (req, res) => {
 
 
 
+// admin creates a new band
+// If leader_user_id is provided, that user becomes a band leader and is linked to the new band
+// POST /api/admin/create-band
+router.post('/create-band', (req, res) => {
+  const {
+    name,
+    leader_user_id,
+    band_type
+  } = req.body || {}
+
+  const validBandTypes = ['standard', 'cbtr', 'low_priority']
+
+  if (!name) {
+    return res.status(400).json({
+      message: 'Band name is required.'
+    })
+  }
+
+  const finalBandType = band_type || 'standard'
+
+  if (!validBandTypes.includes(finalBandType)) {
+    return res.status(400).json({
+      message: 'Invalid band_type. It must be standard, cbtr, or low_priority.'
+    })
+  }
+
+  // if leader_user_id is provided, check that user exists first.
+  if (leader_user_id) {
+    const userSql = `
+      SELECT id, username, status
+      FROM users
+      WHERE id = ?
+    `
+
+    db.query(userSql, [leader_user_id], (userErr, userResults) => {
+      if (userErr) {
+        console.error(userErr)
+        return res.status(500).json({
+          message: 'Failed to check band leader user.'
+        })
+      }
+
+      if (userResults.length === 0) {
+        return res.status(404).json({
+          message: 'Leader user not found.'
+        })
+      }
+
+      createBandWithOptionalLeader()
+    })
+  } else {
+    createBandWithOptionalLeader()
+  }
+
+  function createBandWithOptionalLeader() {
+    const insertSql = `
+      INSERT INTO bands
+      (
+        name,
+        leader_user_id,
+        band_type,
+        is_active
+      )
+      VALUES (?, ?, ?, TRUE)
+    `
+
+    db.query(
+      insertSql,
+      [name, leader_user_id || null, finalBandType],
+      (insertErr, result) => {
+        if (insertErr) {
+          console.error(insertErr)
+          return res.status(500).json({
+            message: 'Failed to create band.'
+          })
+        }
+
+        const newBandId = result.insertId
+
+        // If no leader is provided, just return the new band.
+        if (!leader_user_id) {
+          return res.json({
+            message: 'Band created successfully.',
+            band_id: newBandId,
+            name,
+            leader_user_id: null,
+            band_type: finalBandType
+          })
+        }
+
+        // Link the leader user to this band and make their role = band.
+        const updateUserSql = `
+          UPDATE users
+          SET
+            role = 'band',
+            band_id = ?
+          WHERE id = ?
+        `
+
+        db.query(
+          updateUserSql,
+          [newBandId, leader_user_id],
+          (updateErr) => {
+            if (updateErr) {
+              console.error(updateErr)
+              return res.status(500).json({
+                message: 'Band created, but failed to link leader user.'
+              })
+            }
+
+            res.json({
+              message: 'Band created successfully and leader linked.',
+              band_id: newBandId,
+              name,
+              leader_user_id,
+              band_type: finalBandType
+            })
+          }
+        )
+      }
+    )
+  }
+})
 
 
 
+// admin delete / de-activate a band
+// MS2 for now using soft delete, if need to change exact delete, will process later
+// ps: soft delete keeps historical bids/bookings safe.
+// POST /api/admin/delete-band
+router.post('/delete-band', (req, res) => {
+  const { band_id } = req.body || {}
 
-  // Admin confirm booking for winner
-  // POST /api/admin/confirm-booking
-  router.post('/confirm-booking', (req, res) => {
-    if (!req.body) {
-      return res.status(400).json({
-        message: 'Request body is required'
+  if (!band_id) {
+    return res.status(400).json({
+      message: 'band_id is required.'
+    })
+  }
+
+  // Optional safety check:
+  // Do not deactivate if this band still has future confirmed bookings.
+  const futureBookingSql = `
+    SELECT id
+    FROM bookings
+    WHERE band_id = ?
+      AND booking_type = 'band'
+      AND status = 'confirmed'
+      AND slot_date >= CURDATE()
+  `
+
+  db.query(futureBookingSql, [band_id], (checkErr, futureBookings) => {
+    if (checkErr) {
+      console.error(checkErr)
+      return res.status(500).json({
+        message: 'Failed to check future band bookings.'
       })
     }
 
-    const {
-      band_id,
-      slot_date,
-      slot_time,
-      allocation_score
-    } = req.body
+    if (futureBookings.length > 0) {
+      return res.status(400).json({
+        message: 'Cannot delete this band because it has future confirmed bookings.'
+      })
+    }
 
-    // 1) check whether this slot has already been confirmed
-    const checkSql = `
-      SELECT *
-      FROM bookings
-      WHERE slot_date = ?
-        AND slot_time = ?
-        AND status = 'confirmed'
+    const deactivateSql = `
+      UPDATE bands
+      SET
+        is_active = FALSE,
+        leader_user_id = NULL
+      WHERE id = ?
     `
 
-    db.query(checkSql, [slot_date, slot_time], (checkErr, existingBookings) => {
-      if (checkErr) {
-        console.error(checkErr)
+    db.query(deactivateSql, [band_id], (deactivateErr, result) => {
+      if (deactivateErr) {
+        console.error(deactivateErr)
         return res.status(500).json({
-          message: 'Failed to check existing bookings'
+          message: 'Failed to deactivate band.'
         })
       }
 
-      if (existingBookings.length > 0) {
-        return res.status(400).json({
-          message: 'This slot is already confirmed for another band'
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          message: 'Band not found.'
         })
       }
 
-      // 2) insert confirmed booking
-      const insertSql = `
-        INSERT INTO bookings
-        (
-          band_id,
-          slot_date,
-          slot_time,
-          allocation_score,
-          status
-        )
-        VALUES (?, ?, ?, ?, 'confirmed')
+      // Remove this band_id from users.
+      const unlinkUsersSql = `
+        UPDATE users
+        SET band_id = NULL
+        WHERE band_id = ?
       `
 
-      db.query(
-        insertSql,
-        [band_id, slot_date, slot_time, allocation_score],
-        (insertErr, result) => {
-          if (insertErr) {
-            console.error(insertErr)
-            return res.status(500).json({
-              message: 'Failed to confirm booking'
-            })
-          }
-
-          res.json({
-            message: 'Booking confirmed successfully',
-            booking_id: result.insertId
+      db.query(unlinkUsersSql, [band_id], (unlinkErr) => {
+        if (unlinkErr) {
+          console.error(unlinkErr)
+          return res.status(500).json({
+            message: 'Band deactivated, but failed to unlink users.'
           })
         }
-      )
+
+        res.json({
+          message: 'Band deactivated successfully.',
+          band_id
+        })
+      })
     })
   })
+})
 
 
 
+// admin confirm booking for winner bands (after running suggested-allocation algo)
+// POST /api/admin/confirm-booking
+router.post('/confirm-booking', (req, res) => {
+  const {
+    band_id,
+    slot_date,
+    slot_time,
+    allocation_score
+  } = req.body || {}
+
+  if (!band_id || !slot_date || !slot_time) {
+    return res.status(400).json({
+      message: 'band_id, slot_date, and slot_time are required.'
+    })
+  }
+
+  const parsedSlotDate = parseMysqlDateOnly(slot_date)
+
+  if (Number.isNaN(parsedSlotDate.getTime())) {
+    return res.status(400).json({
+      message: 'Invalid slot_date.'
+    })
+  }
+
+  // 1) Check whether this slot has already been confirmed
+  const checkSql = `
+    SELECT *
+    FROM bookings
+    WHERE slot_date = ?
+      AND slot_time = ?
+      AND status = 'confirmed'
+  `
+
+  db.query(checkSql, [slot_date, slot_time], (checkErr, existingBookings) => {
+    if (checkErr) {
+      console.error(checkErr)
+      return res.status(500).json({
+        message: 'Failed to check existing bookings.'
+      })
+    }
+
+    if (existingBookings.length > 0) {
+      return res.status(400).json({
+        message: 'This slot is already confirmed.'
+      })
+    }
+
+    // 2) Safety check: each band can have max 2 confirmed band slots per week
+    const { weekMonday, weekSunday } = getWeekRange(slot_date)
+
+    const countSql = `
+      SELECT COUNT(*) AS confirmed_count
+      FROM bookings
+      WHERE band_id = ?
+        AND booking_type = 'band'
+        AND status = 'confirmed'
+        AND slot_date BETWEEN ? AND ?
+    `
+
+    db.query(
+      countSql,
+      [
+        band_id,
+        toMysqlDate(weekMonday),
+        toMysqlDate(weekSunday)
+      ],
+      (countErr, countResults) => {
+        if (countErr) {
+          console.error(countErr)
+          return res.status(500).json({
+            message: 'Failed to check band weekly confirmed bookings.'
+          })
+        }
+
+        const confirmedCount = countResults[0].confirmed_count
+
+        if (confirmedCount >= 2) {
+          return res.status(400).json({
+            message: 'This band already has 2 confirmed slots for this week.'
+          })
+        }
+
+        // First slot = primary, second slot = extra
+        const slotCategory = confirmedCount === 0 ? 'primary' : 'extra'
+
+        const insertSql = `
+          INSERT INTO bookings
+          (
+            band_id,
+            user_id,
+            booking_type,
+            slot_category,
+            slot_date,
+            slot_time,
+            allocation_score,
+            status
+          )
+          VALUES (?, NULL, 'band', ?, ?, ?, ?, 'confirmed')
+        `
+
+        db.query(
+          insertSql,
+          [
+            band_id,
+            slotCategory,
+            slot_date,
+            slot_time,
+            allocation_score || null
+          ],
+          (insertErr, result) => {
+            if (insertErr) {
+              console.error(insertErr)
+              return res.status(500).json({
+                message: 'Failed to confirm booking.'
+              })
+            }
+
+            // Optional notification
+            try {
+              const notifications = require('../notifications')
+              notifications.notifySlotConfirmed(band_id, slot_date, slot_time)
+            } catch (e) {
+              console.error('Notification error:', e)
+            }
+
+            res.json({
+              message: 'Band booking confirmed successfully!',
+              booking_id: result.insertId,
+              band_id,
+              booking_type: 'band',
+              slot_category: slotCategory,
+              status: 'confirmed'
+            })
+          }
+        )
+      }
+    )
+  })
+})
 
 
-
-
-
-
-  // Admin able to check the confirmed bookings
-  // GET /api/admin/bookings
-  router.get('/bookings', (req, res) => {
+// Admin able to check the confirmed bookings
+// GET /api/admin/bookings
+router.get('/bookings', (req, res) => {
     const sql = `
       SELECT
         bookings.id,
@@ -374,13 +868,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-
-
-
-
-   // admin updates user role
-   // POST /api/admin/update-user-role
-   router.post('/update-user-role', (req, res) => {
+// admin updates user role
+// POST /api/admin/update-user-role
+  router.post('/update-user-role', (req, res) => {
         const { user_id, role} = req.body
         const validRoles = ['admin', 'band', 'individual']
 
@@ -421,12 +911,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-
-
-
-   // admin links a user to a band --> allow user to see their band slot
-   // POST /api/admin/update-user-band
-   router.post('/update-user-band', (req, res) => {
+// admin links a user to a band --> allow user to see their band slot
+// POST /api/admin/update-user-band
+  router.post('/update-user-band', (req, res) => {
         const { user_id, band_id} = req.body
         if(!user_id) {
             return res.status(400).json({
@@ -467,13 +954,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-
-
-
-
-   // admin view all users
-   // GET /api/admin/users
-   router.get('/users', (req,res) => {
+// admin views all users
+// GET /api/admin/users
+router.get('/users', (req,res) => {
         const sql = `
             SELECT
                 users.id,
@@ -503,12 +986,54 @@ router.post('/run-allocation', (req, res) => {
 
 
 
+// admin views all active bands and band leaders.
+// ps: ?include_inactive=true if admin wants to see deactivated bands also
+// GET /api/admin/bands
+router.get('/bands', (req, res) => {
+  const includeInactive = req.query.include_inactive === 'true'
+
+  let sql = `
+    SELECT
+      bands.id,
+      bands.name,
+      bands.leader_user_id,
+      users.username AS leader_username,
+      users.email AS leader_email,
+      bands.band_type,
+      bands.is_active,
+      bands.created_at
+    FROM bands
+    LEFT JOIN users ON bands.leader_user_id = users.id
+  `
+
+  if (!includeInactive) {
+    sql += `
+      WHERE bands.is_active = TRUE
+    `
+  }
+
+  sql += `
+    ORDER BY bands.id DESC
+  `
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to fetch bands.'
+      })
+    }
+
+    res.json(results)
+  })
+})
 
 
 
-  // admin viewing pending sign-up requests
-  // GET /api/admin/pending-users
-  router.get('/pending-users', (req, res) => {
+
+// admin viewing pending sign-up requests
+// GET /api/admin/pending-users
+router.get('/pending-users', (req, res) => {
     const sql = `
         SELECT
             id,
@@ -542,9 +1067,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-  // admin approves a pending signup request
-  //POST /api/admin/approve-user
-  router.post('/approve-user', (req,res) => {
+// admin approves a pending signup request
+//POST /api/admin/approve-user
+router.post('/approve-user', (req,res) => {
     const { user_id, role, is_mr_certified } = req.body
 
     const validRoles = [ 'admin', 'band', 'individual']
@@ -610,9 +1135,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-  // admin rejects a pending signup request
-  // POST /api/admin/reject-user
-  router.post('/reject-user', (req, res) => {
+// admin rejects a pending signup request
+// POST /api/admin/reject-user
+router.post('/reject-user', (req, res) => {
         const{ user_id } = req.body
 
         if(!user_id) {
@@ -656,16 +1181,9 @@ router.post('/run-allocation', (req, res) => {
 
 
 
-
-
-
-
-
-
-
-  // Admin rejects a booking
-  // POST /api/admin/reject-booking
-  router.post('/reject-booking', (req, res) => {
+// Admin rejects a booking
+// POST /api/admin/reject-booking
+router.post('/reject-booking', (req, res) => {
     const { booking_id, reject_reason} = req.body
 
     if (!booking_id) {
