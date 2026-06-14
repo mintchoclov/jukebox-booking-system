@@ -6,6 +6,7 @@ const authRoutes = require('./routes/authRoutes')
 const bidRoutes = require('./routes/bidRoutes')
 const adminRoutes = require('./routes/adminRoutes')
 const individualRoutes = require('./routes/individualRoutes')
+const bandRoutes = require('./routes/bandRoutes')
 const app = express()
 
 
