@@ -293,51 +293,112 @@ router.post('/weekly', (req, res) => {
           })
         }
 
-        if (existingBids.length > 0) {
-          return res.status(400).json({
-            message: 'This band has already submitted weekly bids for this week.'
-          })
-        }
+// 6: prepare insert weekly bids SQL
+const sql = `
+  INSERT INTO bids
+  (band_id, slot_date, slot_time, preference_rank, bid_value)
+  VALUES ?
+`
 
-        // 6: insert weekly bids
-        const sql = `
-          INSERT INTO bids
-          (band_id, slot_date, slot_time, preference_rank, bid_value)
-          VALUES ?
-        `
+// Backend calculates bid_value based on preference_rank.
+// Do not trust frontend bid_value.
+const values = bids.map((bid) => [
+  band_id,
+  bid.slot_date,
+  normalizeSlotTime(bid.slot_time),
+  bid.preference_rank,
+  getBidValueFromRank(bid.preference_rank)
+])
 
-        // Backend calculates bid_value based on preference_rank.
-        const values = bids.map((bid) => [
-          band_id,
-          bid.slot_date,
-          normalizeSlotTime(bid.slot_time),
-          bid.preference_rank,
-          getBidValueFromRank(bid.preference_rank)
-        ])
-
-        db.query(sql, [values], (err, result) => {
-          if (err) {
-            if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
-              return res.status(400).json({
-                message: 'One or more bids already exist for this band and slot!'
-              })
-            }
-
-            console.error(err)
-
-            return res.status(500).json({
-              message: 'Failed to submit weekly bids'
-            })
-          }
-
-          res.json({
-            message: 'Weekly bids submitted successfully',
-            target_week_monday: targetWeekMonday,
-            insertedCount: result.affectedRows
-          })
+// Helper: insert the new 3 bids
+function insertWeeklyBids(isUpdate) {
+  db.query(sql, [values], (err, result) => {
+    if (err) {
+      if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
+        return res.status(400).json({
+          message: 'One or more bids already exist for this band and slot!'
         })
       }
-    )
+
+      console.error(err)
+
+      return res.status(500).json({
+        message: 'Failed to submit weekly bids'
+      })
+    }
+
+    res.json({
+      message: isUpdate
+        ? 'Weekly bids updated successfully'
+        : 'Weekly bids submitted successfully',
+      target_week_monday: targetWeekMonday,
+      insertedCount: result.affectedRows
+    })
+  })
+}
+
+    // If the band already submitted weekly bids,
+    // allow editing before deadline / before admin confirmation.
+    // Old bids are deleted and replaced by the new 3 bids.
+    if (existingBids.length > 0) {
+    const confirmedBookingSql = `
+        SELECT id
+        FROM bookings
+        WHERE band_id = ?
+        AND booking_type = 'band'
+        AND status = 'confirmed'
+        AND slot_date BETWEEN ? AND ?
+    `
+
+    return db.query(
+        confirmedBookingSql,
+        [
+        band_id,
+        toMysqlDate(weekMonday),
+        toMysqlDate(weekSunday)
+        ],
+        (bookingErr, confirmedBookings) => {
+        if (bookingErr) {
+            console.error(bookingErr)
+            return res.status(500).json({
+            message: 'Failed to check confirmed band bookings.'
+            })
+        }
+
+        if (confirmedBookings.length > 0) {
+            return res.status(400).json({
+            message: 'Bids cannot be edited after band bookings have been confirmed for this week.'
+            })
+        }
+
+        const deleteSql = `
+            DELETE FROM bids
+            WHERE band_id = ?
+            AND slot_date BETWEEN ? AND ?
+        `
+
+        db.query(
+            deleteSql,
+            [
+            band_id,
+            toMysqlDate(weekMonday),
+            toMysqlDate(weekSunday)
+            ],
+            (deleteErr) => {
+            if (deleteErr) {
+                console.error(deleteErr)
+                return res.status(500).json({
+                message: 'Failed to clear existing weekly bids.'
+                })
+            }
+
+            insertWeeklyBids(true)
+            })
+        })
+    }
+    // First-time weekly bid submission
+    insertWeeklyBids(false)
+    })
   })
 })
 
