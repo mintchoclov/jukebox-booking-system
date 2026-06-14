@@ -55,27 +55,53 @@ router.post('/run-allocation', (req, res) => {
       return res.json([])
     }
 
-    // helper function to convert mysql date/js date into YYYY-MM-DD
-    function toDateString(dateValue) {
+    // Updated helper functions to process with the date passed in
+    function formatLocalDate(date) {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+
+      return `${year}-${month}-${day}`
+    }
+
+    function parseMysqlDateOnly(dateValue) {
+      // MySQL DATE may come back as a JS Date object.
+      // NOT using  toISOString() anymore, because it can shift the date by timezone.
       if (dateValue instanceof Date) {
-        return dateValue.toISOString().slice(0, 10)
+        return new Date(
+          dateValue.getFullYear(),
+          dateValue.getMonth(),
+          dateValue.getDate()
+        )
       }
-      return String(dateValue).slice(0, 10)
+
+      const dateString = String(dateValue).slice(0, 10)
+      const [year, month, day] = dateString.split('-').map(Number)
+
+      return new Date(year, month - 1, day)
     }
 
 
-    // helper function: get week Monday string for weekly max-slot counting
+    function toDateString(dateValue) {
+      return formatLocalDate(parseMysqlDateOnly(dateValue))
+    }
+
+
     function getWeekMondayString(dateValue) {
-      const date = new Date(toDateString(dateValue))
+      const date = parseMysqlDateOnly(dateValue)
+
+      // getDay(): Sunday = 0, Monday = 1, ..., Saturday = 6
       const day = date.getDay()
       const daysSinceMonday = (day + 6) % 7
 
-      const weekMonday = new Date(date)
-      weekMonday.setDate(date.getDate() - daysSinceMonday)
-      weekMonday.setHours(0, 0, 0, 0)
+      date.setDate(date.getDate() - daysSinceMonday)
 
-      return weekMonday.toISOString().slice(0, 10)
+      return formatLocalDate(date)
     }
+
+
+
+
 
     // group bids by slot
     const slots = {}
