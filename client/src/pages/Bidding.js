@@ -3,9 +3,35 @@ import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
 import { Card, Button, SectionLabel, Spinner } from '../components/UI'
 import SlotGrid from '../components/Slotgrid'
-import { getWeekDates } from '../components/dateutils'
-import { DAYS, TIMES, TIME_VALS, biddingLegendItems, getBiddingSlotStyle, getDemandLabel } from '../components/calendarstyle'
+import { getWeekDates, getDateStr, getBookingDateStr } from '../components/dateutils'
+import { DAYS, TIMES, TIME_VALS, TIME_SLOTS, biddingLegendItems, getBiddingSlotStyle, getDemandLabel } from '../components/calendarstyle'
 
+function getBidPoints(bandType) {
+  switch (bandType) {
+    case 'cbtr': return [4, 3, 2] // performance band
+    case 'low_priority': return [2, 1] // ad-hoc/senior only 2 choices
+    default: return [3, 2, 1] // standard band
+  }
+}
+
+function getNextBiddingWeekMonday() {
+  const now = new Date()
+  const day = now.getDay()
+  const daysUntilMonday = (8 - day) % 7 || 7
+  const targetMonday = new Date(now)
+  targetMonday.setDate(now.getDate() + daysUntilMonday)
+  targetMonday.setHours(0, 0, 0, 0)
+
+  const deadline = new Date(targetMonday)
+  deadline.setDate(targetMonday.getDate() - 4)
+  deadline.setHours(12, 0, 0, 0)
+
+  if (now > deadline) {
+    targetMonday.setDate(targetMonday.getDate() + 7)
+  }
+
+  return getDateStr(targetMonday)
+}
 
 function Bidding() {
   const navigate = useNavigate()
@@ -22,17 +48,32 @@ function Bidding() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState(null)
-  const [biddingOpen, setBiddingOpen] = useState(true)
+  const [biddingOpen, setBiddingOpen] = useState(false)
+  const [targetWeekMonday, setTargetWeekMonday] = useState('')
+
   const [myBids, setMyBids] = useState(
   Array.from({ length: numChoices }, () => ({ day: '', time: '' }))
 )
-  const nextWeekDates = getWeekDates(1)
-
+    const biddingWeekDates = targetWeekMonday
+    ? Array.from({ length: 7 }, (_, i) => {
+        const [y, m, d] = targetWeekMonday.split('-').map(Number)
+        return new Date(y, m - 1, d + i, 12, 0, 0)
+      })
+    : getWeekDates(1)
+  
   useEffect(() => {
     if (!user || !user.id) {
       navigate('/login')
       return
     }
+
+    const weekMonday = getNextBiddingWeekMonday()
+    setTargetWeekMonday(weekMonday)
+
+    fetch(`${API_URL}/api/admin/bidding-status?target_week_monday=${weekMonday}`)
+      .then(res => res.json())
+      .then(data => setBiddingOpen(data.is_open))
+      .catch(() => {})
 
     fetch(`${API_URL}/api/bids`)
       .then(res => res.json())
@@ -46,12 +87,15 @@ function Bidding() {
       .then(res => res.json())
       .then(data => {
         const confirmed = {}
+        const [y, m, d] = weekMonday.split('-').map(Number)
+        const weekDates = Array.from({ length: 7 }, (_, i) => {
+             return getDateStr(new Date(y, m - 1, d + i, 12, 0, 0))
+            })
         Array.isArray(data) && data.forEach(b => {
           if (b.status === 'confirmed' && b.booking_type === 'band') {
-            const dateStr = new Date(new Date(b.slot_date).getTime() + 8 * 60 * 60 * 1000)
-              .toLocaleDateString('en-GB', { weekday: 'short' })
-            const dayIdx = DAYS.indexOf(dateStr.slice(0, 3))
-            const timeIdx = TIME_VALS.indexOf(b.slot_time?.slice(0, 5))
+            const dateStr = getBookingDateStr(b.slot_date)
+            const dayIdx = weekDates.indexOf(dateStr)
+            const timeIdx = TIME_SLOTS.findIndex(t => t.value === b.slot_time?.slice(0, 5))
             if (dayIdx !== -1 && timeIdx !== -1) {
               confirmed[`${dayIdx}_${timeIdx}`] = b.band_name || 'Band'
             }
@@ -60,22 +104,16 @@ function Bidding() {
         setConfirmedSlots(confirmed)
       })
       .catch(() => {})
-
-    // revert after testing
-    // const weekStart = nextWeekDates[0].toISOString().split('T')[0]
-    // fetch(`${API_URL}/api/admin/bidding-status?week_start=${weekStart}`)
-    //   .then(res => res.json())
-    //   .then(data => setBiddingOpen(data.is_open))
-    //   .catch(() => {})
-
   }, [])
 
   function getTotalPts(dayIdx, timeIdx) {
+    const dateStr = biddingWeekDates[dayIdx] ? getDateStr(biddingWeekDates[dayIdx]) : ''
+    const time = TIME_SLOTS[timeIdx]?.value
+
     const existing = bids
       .filter(b => {
-        const slotDate = new Date(new Date(b.slot_date).getTime() + 8 * 60 * 60 * 1000)
-        const bDay = slotDate.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 3)
-        return DAYS.indexOf(bDay) === dayIdx && TIME_VALS.indexOf(b.slot_time?.slice(0, 5)) === timeIdx
+        return getBookingDateStr(b.slot_date) === dateStr &&
+        b.slot_time?.slice(0, 5) === time
       })
       .reduce((sum, b) => sum + (b.bid_value || 0), 0)
     return existing + getMyBidPts(dayIdx, timeIdx)
@@ -95,19 +133,12 @@ function Bidding() {
   }
 
   function getBidsForSlot(dayIdx, timeIdx) {
-    return bids.filter(b => {
-      const slotDate = new Date(new Date(b.slot_date).getTime() + 8 * 60 * 60 * 1000)
-      const bDay = slotDate.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 3)
-      return DAYS.indexOf(bDay) === dayIdx && TIME_VALS.indexOf(b.slot_time?.slice(0, 5)) === timeIdx
-    })
-  }
-
-  function getBidPoints(bandType) {
-    switch (bandType) {
-      case 'cbtr': return [4, 3, 2] // performance band
-      case 'low_priority': return [2, 1] // ad-hoc/senior only 2 choices
-      default: return [3, 2, 1] // standard band
-    }
+    const dateStr = biddingWeekDates[dayIdx] ? getDateStr(biddingWeekDates[dayIdx]) : ''
+    const time = TIME_SLOTS[timeIdx]?.value
+    return bids.filter(b => 
+      getBookingDateStr(b.slot_date) === dateStr &&
+      b.slot_time?.slice(0, 5) === time
+    )
   }
 
   function handleGetSlotStyle(di, ti) {
@@ -185,7 +216,7 @@ function Bidding() {
     setError('')
 
     const bidsPayload = myBids.map((b, i) => ({
-      slot_date: nextWeekDates[parseInt(b.day)].toLocaleDateString('en-CA'),
+      slot_date: getDateStr(biddingWeekDates[parseInt(b.day)]),
       slot_time: TIME_VALS[parseInt(b.time)],
       preference_rank: i + 1,
       bid_value: bidPoints[i]
@@ -284,7 +315,7 @@ function Bidding() {
             </span>
           </div>
           <p className="text-xs text-navy opacity-40 mt-2">
-            {nextWeekDates[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {nextWeekDates[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {biddingWeekDates[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {biddingWeekDates[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </Card>
 
@@ -301,7 +332,7 @@ function Bidding() {
           </div>
 
           <SlotGrid
-            weekDates={nextWeekDates}
+            weekDates={biddingWeekDates}
             getSlotStyle={handleGetSlotStyle}
             getSlotLabel={handleGetSlotLabel}
             onSlotClick={handleSlotClick}
@@ -321,7 +352,7 @@ function Bidding() {
               <div className="bg-primarySoft rounded-xl p-3 mt-4">
                 <div className="flex justify-between items-center mb-2">
                   <p className="text-sm font-medium text-navy">
-                    {DAYS[d]} {nextWeekDates[d]?.getDate()} · {TIMES[t]}
+                    {DAYS[d]} {biddingWeekDates[d]?.getDate()} · {TIMES[t]}
                   </p>
                   <button
                     onClick={() => setSelectedSlot(null)}
@@ -395,7 +426,7 @@ function Bidding() {
                   >
                     <option value="">Day</option>
                     {DAYS.map((d, di) => (
-                      <option key={di} value={di}>{d} {nextWeekDates[di]?.getDate()}</option>
+                      <option key={di} value={di}>{d} {biddingWeekDates[di]?.getDate()}</option>
                     ))}
                   </select>
                   <select
