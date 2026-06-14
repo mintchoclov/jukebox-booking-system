@@ -49,18 +49,16 @@ function Bidding() {
   const [error, setError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [biddingOpen, setBiddingOpen] = useState(false)
-  const [targetWeekMonday, setTargetWeekMonday] = useState('')
+  const targetWeekMonday = getNextBiddingWeekMonday()
 
   const [myBids, setMyBids] = useState(
   Array.from({ length: numChoices }, () => ({ day: '', time: '' }))
 )
-    const biddingWeekDates = targetWeekMonday
-    ? Array.from({ length: 7 }, (_, i) => {
-        const [y, m, d] = targetWeekMonday.split('-').map(Number)
-        return new Date(y, m - 1, d + i, 12, 0, 0)
-      })
-    : getWeekDates(1)
-  
+  const biddingWeekDates = Array.from({ length: 7 }, (_, i) => {
+    const [y, m, d] = targetWeekMonday.split('-').map(Number)
+    return new Date(y, m - 1, d + i, 12, 0, 0)
+  })
+
   useEffect(() => {
     if (!user || !user.id) {
       navigate('/login')
@@ -68,7 +66,6 @@ function Bidding() {
     }
 
     const weekMonday = getNextBiddingWeekMonday()
-    setTargetWeekMonday(weekMonday)
 
     fetch(`${API_URL}/api/admin/bidding-status?target_week_monday=${weekMonday}`)
       .then(res => res.json())
