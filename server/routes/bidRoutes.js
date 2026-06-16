@@ -126,26 +126,23 @@ router.post('/', (req, res) => {
 //NO.2
 // 提交一整周的 3 个 ranked bids
 // POST /api/bids/weekly
-// NO.2
-// Submit one full weekly set of 3 ranked bids
-// POST /api/bids/weekly
 router.post('/weekly', (req, res) => {
-  const { band_id, bids } = req.body || {}
+  const { user_id, band_id, bids } = req.body || {}
 
-  if (!band_id) {
+  if (!user_id || !band_id) {
     return res.status(400).json({
-      message: 'band_id is required.'
+      message: 'user_id and band_id are required.'
     })
   }
 
-  // Check that bids is an array
+  // check that bids is an array
   if (!Array.isArray(bids)) {
     return res.status(400).json({
       message: 'bids must be an array'
     })
   }
 
-  // A band must submit exactly 3 choices
+  //  band must submit exactly 3 choices
   if (bids.length !== 3) {
     return res.status(400).json({
       message: 'A band must submit exactly 3 ranked choices'
@@ -175,29 +172,30 @@ router.post('/weekly', (req, res) => {
       })
     }
 
-    // Validate preference_rank
+    // validate preference_rank
     if (![1, 2, 3].includes(Number(preference_rank))) {
       return res.status(400).json({
         message: 'Each preference rank must be 1, 2, or 3'
       })
     }
 
-    // Prevent duplicate preference rank
+    // prevent duplicate preference rank
     if (seenRanks.has(Number(preference_rank))) {
       return res.status(400).json({
         message: 'Duplicate preference rank is not allowed'
       })
     }
+
     seenRanks.add(Number(preference_rank))
 
-    // Validate slot_time
+    // validate slot_time
     if (!slot_time || !validSlotTimes.includes(slot_time)) {
       return res.status(400).json({
         message: 'Invalid slot time. Slot must be a valid 2-hour block.'
       })
     }
 
-    // Prevent duplicate slot inside the same weekly submission
+    // prevent duplicate slot inside the same weekly submission
     const slotKey = `${slot_date}_${slot_time}`
 
     if (seenSlots.has(slotKey)) {
@@ -205,6 +203,7 @@ router.post('/weekly', (req, res) => {
         message: 'Duplicate slot is not allowed in the same weekly submission'
       })
     }
+
     seenSlots.add(slotKey)
 
     // Bidding deadline: Thursday 12:00 PM before the target week
@@ -246,158 +245,183 @@ router.post('/weekly', (req, res) => {
   const { weekMonday, weekSunday } = getWeekRange(bids[0].slot_date)
   const targetWeekMonday = toMysqlDate(weekMonday)
 
-  // 4: check whether admin manually closed bidding for this week
-  const biddingWindowSql = `
-    SELECT status
-    FROM bidding_windows
-    WHERE target_week_monday = ?
+  // 4: only the band leader can submit or edit weekly bids
+  const leaderSql = `
+    SELECT id, name
+    FROM bands
+    WHERE id = ?
+      AND leader_user_id = ?
+      AND is_active = TRUE
   `
 
-  db.query(biddingWindowSql, [targetWeekMonday], (windowErr, windowResults) => {
-    if (windowErr) {
-      console.error(windowErr)
+  db.query(leaderSql, [band_id, user_id], (leaderErr, leaderResults) => {
+    if (leaderErr) {
+      console.error(leaderErr)
       return res.status(500).json({
-        message: 'Failed to check bidding window.'
+        message: 'Failed to check band leader permission.'
       })
     }
 
-    if (
-      windowResults.length > 0 &&
-      windowResults[0].status === 'closed'
-    ) {
-      return res.status(400).json({
-        message: 'Bidding is closed for this week.'
+    if (leaderResults.length === 0) {
+      return res.status(403).json({
+        message: 'Only the band leader can submit or edit bids for this band.'
       })
     }
 
-    // 5: prevent the same band from submitting another set of weekly bids
-    const existingWeeklySql = `
-      SELECT id
-      FROM bids
-      WHERE band_id = ?
-        AND slot_date BETWEEN ? AND ?
+    // 5: check whether admin manually closed bidding for this week
+    const biddingWindowSql = `
+      SELECT status
+      FROM bidding_windows
+      WHERE target_week_monday = ?
     `
 
-    db.query(
-      existingWeeklySql,
-      [
-        band_id,
-        toMysqlDate(weekMonday),
-        toMysqlDate(weekSunday)
-      ],
-      (existingErr, existingBids) => {
-        if (existingErr) {
-          console.error(existingErr)
-          return res.status(500).json({
-            message: 'Failed to check existing weekly bids.'
-          })
-        }
-
-// 6: prepare insert weekly bids SQL
-const sql = `
-  INSERT INTO bids
-  (band_id, slot_date, slot_time, preference_rank, bid_value)
-  VALUES ?
-`
-
-// Backend calculates bid_value based on preference_rank.
-// Do not trust frontend bid_value.
-const values = bids.map((bid) => [
-  band_id,
-  bid.slot_date,
-  normalizeSlotTime(bid.slot_time),
-  bid.preference_rank,
-  getBidValueFromRank(bid.preference_rank)
-])
-
-// Helper: insert the new 3 bids
-function insertWeeklyBids(isUpdate) {
-  db.query(sql, [values], (err, result) => {
-    if (err) {
-      if (err.errno === 1062 || err.code === 'ER_DUP_ENTRY') {
-        return res.status(400).json({
-          message: 'One or more bids already exist for this band and slot!'
+    db.query(biddingWindowSql, [targetWeekMonday], (windowErr, windowResults) => {
+      if (windowErr) {
+        console.error(windowErr)
+        return res.status(500).json({
+          message: 'Failed to check bidding window.'
         })
       }
 
-      console.error(err)
-
-      return res.status(500).json({
-        message: 'Failed to submit weekly bids'
-      })
-    }
-
-    res.json({
-      message: isUpdate
-        ? 'Weekly bids updated successfully'
-        : 'Weekly bids submitted successfully',
-      target_week_monday: targetWeekMonday,
-      insertedCount: result.affectedRows
-    })
-  })
-}
-
-    // If the band already submitted weekly bids,
-    // allow editing before deadline / before admin confirmation.
-    // Old bids are deleted and replaced by the new 3 bids.
-    if (existingBids.length > 0) {
-    const confirmedBookingSql = `
-        SELECT id
-        FROM bookings
-        WHERE band_id = ?
-        AND booking_type = 'band'
-        AND status = 'confirmed'
-        AND slot_date BETWEEN ? AND ?
-    `
-
-    return db.query(
-        confirmedBookingSql,
-        [
-        band_id,
-        toMysqlDate(weekMonday),
-        toMysqlDate(weekSunday)
-        ],
-        (bookingErr, confirmedBookings) => {
-        if (bookingErr) {
-            console.error(bookingErr)
-            return res.status(500).json({
-            message: 'Failed to check confirmed band bookings.'
-            })
-        }
-
-        if (confirmedBookings.length > 0) {
-            return res.status(400).json({
-            message: 'Bids cannot be edited after band bookings have been confirmed for this week.'
-            })
-        }
-
-        const deleteSql = `
-            DELETE FROM bids
-            WHERE band_id = ?
-            AND slot_date BETWEEN ? AND ?
-        `
-
-        db.query(
-            deleteSql,
-            [
-            band_id,
-            toMysqlDate(weekMonday),
-            toMysqlDate(weekSunday)
-            ],
-            (deleteErr) => {
-            if (deleteErr) {
-                console.error(deleteErr)
-                return res.status(500).json({
-                message: 'Failed to clear existing weekly bids.'
-                })
-            }
-
-            insertWeeklyBids(true)
-            })
+      if (
+        windowResults.length > 0 &&
+        windowResults[0].status === 'closed'
+      ) {
+        return res.status(400).json({
+          message: 'Bidding is closed for this week.'
         })
-    }
-    // First-time weekly bid submission
-    insertWeeklyBids(false)
+      }
+
+      // 6: check whether this band already submitted weekly bids
+      const existingWeeklySql = `
+        SELECT id
+        FROM bids
+        WHERE band_id = ?
+          AND slot_date BETWEEN ? AND ?
+      `
+
+      db.query(
+        existingWeeklySql,
+        [
+          band_id,
+          toMysqlDate(weekMonday),
+          toMysqlDate(weekSunday)
+        ],
+        (existingErr, existingBids) => {
+          if (existingErr) {
+            console.error(existingErr)
+            return res.status(500).json({
+              message: 'Failed to check existing weekly bids.'
+            })
+          }
+
+          // 7: prepare insert SQL
+          const insertSql = `
+            INSERT INTO bids
+            (band_id, slot_date, slot_time, preference_rank, bid_value)
+            VALUES ?
+          `
+
+          // Backend calculates bid_value based on preference_rank.
+          const values = bids.map((bid) => [
+            band_id,
+            bid.slot_date,
+            normalizeSlotTime(bid.slot_time),
+            bid.preference_rank,
+            getBidValueFromRank(bid.preference_rank)
+          ])
+
+          // helper function: insert new 3 bids
+          function insertWeeklyBids(isUpdate) {
+            db.query(insertSql, [values], (insertErr, result) => {
+              if (insertErr) {
+                if (insertErr.errno === 1062 || insertErr.code === 'ER_DUP_ENTRY') {
+                  return res.status(400).json({
+                    message: 'One or more bids already exist for this band and slot!'
+                  })
+                }
+
+                console.error(insertErr)
+
+                return res.status(500).json({
+                  message: 'Failed to submit weekly bids'
+                })
+              }
+
+              res.json({
+                message: isUpdate
+                  ? 'Weekly bids updated successfully'
+                  : 'Weekly bids submitted successfully',
+                target_week_monday: targetWeekMonday,
+                insertedCount: result.affectedRows
+              })
+            })
+          }
+
+          // 8: if old bids exist, allow edit before admin confirmation
+          if (existingBids.length > 0) {
+            const confirmedBookingSql = `
+              SELECT id
+              FROM bookings
+              WHERE band_id = ?
+                AND booking_type = 'band'
+                AND status = 'confirmed'
+                AND slot_date BETWEEN ? AND ?
+            `
+
+            return db.query(
+              confirmedBookingSql,
+              [
+                band_id,
+                toMysqlDate(weekMonday),
+                toMysqlDate(weekSunday)
+              ],
+              (bookingErr, confirmedBookings) => {
+                if (bookingErr) {
+                  console.error(bookingErr)
+                  return res.status(500).json({
+                    message: 'Failed to check confirmed band bookings.'
+                  })
+                }
+
+                if (confirmedBookings.length > 0) {
+                  return res.status(400).json({
+                    message: 'Bids cannot be edited after band bookings have been confirmed for this week.'
+                  })
+                }
+
+                const deleteSql = `
+                  DELETE FROM bids
+                  WHERE band_id = ?
+                    AND slot_date BETWEEN ? AND ?
+                `
+
+                db.query(
+                  deleteSql,
+                  [
+                    band_id,
+                    toMysqlDate(weekMonday),
+                    toMysqlDate(weekSunday)
+                  ],
+                  (deleteErr) => {
+                    if (deleteErr) {
+                      console.error(deleteErr)
+                      return res.status(500).json({
+                        message: 'Failed to clear existing weekly bids.'
+                      })
+                    }
+
+                    insertWeeklyBids(true)
+                  }
+                )
+              }
+            )
+          }
+
+          // 9: first-time weekly bid submission
+          insertWeeklyBids(false)
+        }
+      )
     })
   })
 })

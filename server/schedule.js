@@ -21,3 +21,39 @@ cron.schedule('* * * * *', () => {
   notifications.notifySlotReminder()
   notifications.notifyConfirmationReminder()
 })
+
+
+// every 10 minutes
+cron.schedule('*/10 * * * *', () => {
+  autoReleaseExpiredBandConfirmations()
+})
+
+
+// function checking for band unconfirmed slot auto-release
+function autoReleaseExpiredBandConfirmations() {
+  const sql = `
+    UPDATE bookings
+    SET
+      status = 'cancelled',
+      band_confirmation_status = 'released',
+      released_at = CURRENT_TIMESTAMP,
+      release_reason = 'Auto-released because band leader did not confirm before deadline.'
+    WHERE booking_type = 'band'
+      AND status = 'confirmed'
+      AND band_confirmation_status = 'pending'
+      AND band_confirmation_deadline IS NOT NULL
+      AND band_confirmation_deadline < NOW()
+  `
+
+  db.query(sql, (err, result) => {
+    if (err) {
+      console.error('Failed to auto-release expired band confirmations:', err)
+      return
+    }
+
+    if (result.affectedRows > 0) {
+      console.log(`Auto-released ${result.affectedRows} expired band booking(s).`)
+    }
+  })
+}
+
