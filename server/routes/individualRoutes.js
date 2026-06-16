@@ -55,16 +55,6 @@ function normalizeSlotTime(slotTime) {
   return slotTimeMap[cleanedSlotTime] || null
 }
 
-// helper function building slot date time:
-function buildSlotDateTime(slotDate, slotTime) {
-    const dateString = slotDate instanceof Date
-    ? slotDate.toISOString().slice(0, 10)
-    : String(slotDate).slice(0, 10)
-
-    const timeString = String(slotTime).slice(0, 5)
-    return new Date(`${dateString}T${timeString}:00`)
-}
-
 // function doing ddl checking: at least 72 hours before
 function isAtLeast72HrsBefore(slotDate, slotTime) {
     const slotStart = buildSlotDateTime(slotDate, slotTime)
@@ -76,10 +66,42 @@ function isAtLeast72HrsBefore(slotDate, slotTime) {
     return diffHrs >= 72
 }
 
-function getWeekRange(slotDate) {
-    const targetDate = new Date(slotDate)
 
-  // getDay(): Sunday = 0, Monday = 1 ......Saturday = 6
+// helper function building slot date time:
+function formatLocalDate(date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+}
+
+function parseMysqlDateOnly(dateValue) {
+    if (dateValue instanceof Date) {
+        return new Date(
+            dateValue.getFullYear(),
+            dateValue.getMonth(),
+            dateValue.getDate()
+        )
+    }
+
+    const dateString = String(dateValue).slice(0, 10)
+    const [year, month, day] = dateString.split('-').map(Number)
+
+    return new Date(year, month - 1, day)
+}
+
+function buildSlotDateTime(slotDate, slotTime) {
+    const dateObj = parseMysqlDateOnly(slotDate)
+    const dateString = formatLocalDate(dateObj)
+    const timeString = String(slotTime).slice(0, 5)
+
+    return new Date(`${dateString}T${timeString}:00`)
+}
+
+function getWeekRange(slotDate) {
+    const targetDate = parseMysqlDateOnly(slotDate)
+
     const day = targetDate.getDay()
     const daysSinceMonday = (day + 6) % 7
 
@@ -94,10 +116,10 @@ function getWeekRange(slotDate) {
     return { weekMonday, weekSunday }
 }
 
-// helper changing the date into mysql format
 function toMysqlDate(dateObj) {
-  return dateObj.toISOString().slice(0, 10)
+    return formatLocalDate(dateObj)
 }
+
 
 // self-practice booking opens Friday 12:00 AM for the following week.
 function isSelfPracticeWindowOpen(slotDate) {
@@ -215,6 +237,14 @@ router.post('/book', (req, res) => {
         if (user.status !== 'approved') {
             return res.status(403).json({
                 message: 'Only approved users can book self-practice slots.'
+            })
+        }
+
+        // mr certification test(i think no need but for safety i still added)
+        // Even if someone calls the API directly, non-certified users cannot book.
+        if (!user.is_mr_certified) {
+            return res.status(403).json({
+                message: 'Only MR-certified users can book self-practice slots.'
             })
         }
 
@@ -353,6 +383,20 @@ router.post('/book', (req, res) => {
                                 })
                             }
 
+                            // notify the original owner that their extra slot was displaced.
+                            // it is non-blocking: even if notification fails, booking should continue.
+                            try {
+                                const notifications = require('../notifications')
+
+                                notifications.notifySlotDisplaced(
+                                    existingBooking.user_id,
+                                    slot_date,
+                                    slot_time
+                                )
+                            } catch (e) {
+                                console.error('Notification error:', e)
+                            }
+
                             db.query(
                                 insertSql,
                                 [
@@ -446,14 +490,60 @@ router.get('/view-my-bookings', (req, res) => {
 })
 
 
+// No.3
+// GET /api/individual/view-my-bands
+// User views all bands they belong to.
+// A user can belong to multiple bands.
+router.get('/view-my-bands', (req, res) => {
+    const { user_id } = req.query
+
+    if (!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required.'
+        })
+    }
+
+    const sql = `
+        SELECT
+            bands.id AS band_id,
+            bands.name AS band_name,
+            bands.band_type,
+            bands.leader_user_id,
+            leader.username AS leader_username,
+            band_members.member_role,
+            bands.is_active,
+            CASE
+                WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+                ELSE FALSE
+            END AS is_leader
+        FROM band_members
+        JOIN bands
+            ON band_members.band_id = bands.id
+        LEFT JOIN users AS leader
+            ON bands.leader_user_id = leader.id
+        WHERE band_members.user_id = ?
+            AND bands.is_active = TRUE
+        ORDER BY bands.name
+    `
+
+    db.query(sql, [user_id], (err, bands) => {
+        if (err) {
+            console.error(err)
+            return res.status(500).json({
+                message: 'Failed to fetch user bands.'
+            })
+        }
+
+        res.json(bands)
+    })
+})
 
 
 
-
-
-//No.3
+//No.4
 // GET /api/individual/view-my-band-bookings
-// user views confirmed band bookings for the band they belong to
+// user views confirmed band bookings for ALL bands they belong to.
+// user can belong to multiple bands.
 router.get('/view-my-band-bookings', (req, res) => {
     const { user_id } = req.query
 
@@ -463,66 +553,59 @@ router.get('/view-my-band-bookings', (req, res) => {
         })
     }
 
-    const userSql = `
+    const sql = `
         SELECT
-            id,
-            username,
-            band_id
-        FROM users
-        WHERE id = ?
+            bookings.id AS booking_id,
+            bookings.band_id,
+            bands.name AS band_name,
+            bands.band_type,
+            bands.leader_user_id,
+            leader.username AS leader_username,
+
+            band_members.member_role,
+            CASE
+                WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+                ELSE FALSE
+            END AS is_leader,
+
+            bookings.booking_type,
+            bookings.slot_category,
+            bookings.slot_date,
+            bookings.slot_time,
+            bookings.allocation_score,
+            bookings.status,
+            bookings.band_confirmation_status,
+            bookings.band_confirmation_deadline,
+            bookings.band_confirmed_at,
+            bookings.released_at,
+            bookings.release_reason,
+            bookings.created_at
+        FROM band_members
+        JOIN bands
+            ON band_members.band_id = bands.id
+        LEFT JOIN users AS leader
+            ON bands.leader_user_id = leader.id
+        JOIN bookings
+            ON bookings.band_id = bands.id
+        WHERE band_members.user_id = ?
+            AND bands.is_active = TRUE
+            AND bookings.booking_type = 'band'
+            AND bookings.status = 'confirmed'
+        ORDER BY
+            bands.name,
+            bookings.slot_date,
+            bookings.slot_time
     `
 
-    db.query(userSql, [user_id], (userErr, userResults) => {
-        if (userErr) {
-            console.error(userErr)
+    db.query(sql, [user_id], (err, bookings) => {
+        if (err) {
+            console.error(err)
             return res.status(500).json({
-                message: 'Failed to check user band.'
+                message: 'Failed to fetch band bookings.'
             })
         }
 
-        if (userResults.length === 0) {
-            return res.status(404).json({
-                message: 'User not found.'
-            })
-        }
-
-        const user = userResults[0]
-
-        if (!user.band_id) {
-            return res.status(400).json({
-                message: 'This user is not linked to any band.'
-            })
-        }
-
-        const bookingSql = `
-            SELECT
-                bookings.id,
-                bookings.band_id,
-                bands.name AS band_name,
-                bookings.booking_type,
-                bookings.slot_date,
-                bookings.slot_time,
-                bookings.allocation_score,
-                bookings.status,
-                bookings.created_at
-            FROM bookings
-            LEFT JOIN bands ON bookings.band_id = bands.id
-            WHERE bookings.band_id = ?
-              AND bookings.booking_type = 'band'
-              AND bookings.status = 'confirmed'
-            ORDER BY bookings.slot_date, bookings.slot_time
-        `
-
-        db.query(bookingSql, [user.band_id], (bookingErr, bookings) => {
-            if (bookingErr) {
-                console.error(bookingErr)
-                return res.status(500).json({
-                    message: 'Failed to fetch band bookings.'
-                })
-            }
-
-            res.json(bookings)
-        })
+        res.json(bookings)
     })
 })
 
@@ -532,9 +615,7 @@ router.get('/view-my-band-bookings', (req, res) => {
 
 
 
-
-
-//NO.3
+//NO.5
 // POST /api/individual/cancel-booking
 // Individual users cancel their own self-practice booking
 // Cancellation does NOT need admin approval.

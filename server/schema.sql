@@ -90,3 +90,13 @@ CREATE TABLE IF NOT EXISTS bidding_windows (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     );
+
+CREATE TABLE IF NOT EXISTS band_members (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    band_id INT NOT NULL,
+    user_id INT NOT NULL,
+    member_role ENUM('leader', 'member') DEFAULT 'member',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY unique_band_user (band_id, user_id)
+    );
