@@ -50,7 +50,6 @@ function getWeekRange(slotDate) {
 function toMysqlDate(dateObj) {
   return formatLocalDate(dateObj)
 }
-
 // Get target week Monday from either target_week_monday or slot_date
 function getTargetWeekMondayFromInput(input) {
   if (input.target_week_monday) {
@@ -87,6 +86,57 @@ function getBiddingDeadlineFromWeekMonday(targetWeekMonday) {
 
   return deadline
 }
+
+//-------------------------------------------------------
+// helpers: match the band type in front-end to backend(due to diff string used)
+function normalizeBandType(bandType) {
+  if (!bandType) {
+    return 'standard'
+  }
+
+  const cleaned = String(bandType).trim().toLowerCase()
+
+  const map = {
+    'standard': 'standard',
+
+    'performance': 'cbtr',
+    'cbtr': 'cbtr',
+    'near cbtr': 'cbtr',
+    'near-cbtr': 'cbtr',
+
+    'ad-hoc / senior': 'low_priority',
+    'ad-hoc/senior': 'low_priority',
+    'ad-hoc': 'low_priority',
+    'senior': 'low_priority',
+    'low priority': 'low_priority',
+    'low_priority': 'low_priority'
+  }
+
+  return map[cleaned] || null
+}
+
+function buildSlotDateTime(slotDate, slotTime) {
+  const dateString = slotDate instanceof Date
+    ? formatLocalDate(slotDate)
+    : String(slotDate).slice(0, 10)
+
+  const timeString = String(slotTime).slice(0, 5)
+
+  return new Date(`${dateString}T${timeString}:00`)
+}
+
+function getBandConfirmationDeadline(slotDate, slotTime) {
+  const slotStart = buildSlotDateTime(slotDate, slotTime)
+  const deadline = new Date(slotStart)
+
+  // band leader must confirm 4 days before slot start
+  deadline.setDate(slotStart.getDate() - 4)
+
+  return deadline
+}
+
+
+
 
 
 
@@ -143,6 +193,7 @@ router.get('/bidding-status', (req, res) => {
 })
 
 
+
 // admin manually open bidding for a targetweek
 // POST /api/admin/open-bidding
 router.post('/open-bidding', (req, res) => {
@@ -184,6 +235,9 @@ router.post('/open-bidding', (req, res) => {
     })
   })
 })
+
+
+
 
 // admin manually close bidding for a targetweek
 // POST /api/admin/close-bidding
@@ -486,51 +540,49 @@ router.post('/create-band', (req, res) => {
     band_type
   } = req.body || {}
 
-  const validBandTypes = ['standard', 'cbtr', 'low_priority']
-
   if (!name) {
     return res.status(400).json({
       message: 'Band name is required.'
     })
   }
 
-  const finalBandType = band_type || 'standard'
+  const finalBandType = normalizeBandType(band_type)
 
-  if (!validBandTypes.includes(finalBandType)) {
+  if (!finalBandType) {
     return res.status(400).json({
-      message: 'Invalid band_type. It must be standard, cbtr, or low_priority.'
+      message: 'Invalid band_type. Use Standard, Performance, or Ad-hoc / Senior.'
     })
   }
 
-  // if leader_user_id is provided, check that user exists first.
   if (leader_user_id) {
-    const userSql = `
-      SELECT id, username, status
-      FROM users
-      WHERE id = ?
+    const leaderCheckSql = `
+      SELECT id
+      FROM bands
+      WHERE leader_user_id = ?
+        AND is_active = TRUE
     `
 
-    db.query(userSql, [leader_user_id], (userErr, userResults) => {
-      if (userErr) {
-        console.error(userErr)
+    db.query(leaderCheckSql, [leader_user_id], (leaderErr, leaderBands) => {
+      if (leaderErr) {
+        console.error(leaderErr)
         return res.status(500).json({
-          message: 'Failed to check band leader user.'
+          message: 'Failed to check leader status.'
         })
       }
 
-      if (userResults.length === 0) {
-        return res.status(404).json({
-          message: 'Leader user not found.'
+      if (leaderBands.length > 0) {
+        return res.status(400).json({
+          message: 'This user is already the leader of another active band.'
         })
       }
 
-      createBandWithOptionalLeader()
+      createBand()
     })
   } else {
-    createBandWithOptionalLeader()
+    createBand()
   }
 
-  function createBandWithOptionalLeader() {
+  function createBand() {
     const insertSql = `
       INSERT INTO bands
       (
@@ -555,7 +607,6 @@ router.post('/create-band', (req, res) => {
 
         const newBandId = result.insertId
 
-        // If no leader is provided, just return the new band.
         if (!leader_user_id) {
           return res.json({
             message: 'Band created successfully.',
@@ -566,23 +617,33 @@ router.post('/create-band', (req, res) => {
           })
         }
 
-        // Link the leader user to this band and make their role = band.
         const updateUserSql = `
           UPDATE users
-          SET
-            role = 'band',
-            band_id = ?
+          SET role = 'band'
           WHERE id = ?
         `
 
-        db.query(
-          updateUserSql,
-          [newBandId, leader_user_id],
-          (updateErr) => {
-            if (updateErr) {
-              console.error(updateErr)
+        db.query(updateUserSql, [leader_user_id], (updateErr) => {
+          if (updateErr) {
+            console.error(updateErr)
+            return res.status(500).json({
+              message: 'Band created, but failed to update leader role.'
+            })
+          }
+
+          const memberSql = `
+            INSERT INTO band_members
+            (band_id, user_id, member_role)
+            VALUES (?, ?, 'leader')
+            ON DUPLICATE KEY UPDATE
+              member_role = 'leader'
+          `
+
+          db.query(memberSql, [newBandId, leader_user_id], (memberErr) => {
+            if (memberErr) {
+              console.error(memberErr)
               return res.status(500).json({
-                message: 'Band created, but failed to link leader user.'
+                message: 'Band created, but failed to add leader to band members.'
               })
             }
 
@@ -593,8 +654,8 @@ router.post('/create-band', (req, res) => {
               leader_user_id,
               band_type: finalBandType
             })
-          }
-        )
+          })
+        })
       }
     )
   }
@@ -688,6 +749,202 @@ router.post('/delete-band', (req, res) => {
 
 
 
+// POST /api/admin/add-band-member
+// admin adds a normal member to a band
+// a user can be a member of multiple bands
+router.post('/add-band-member', (req, res) => {
+  const { band_id, user_id } = req.body || {}
+
+  if (!band_id || !user_id) {
+    return res.status(400).json({
+      message: 'band_id and user_id are required.'
+    })
+  }
+
+  const sql = `
+    INSERT INTO band_members
+    (band_id, user_id, member_role)
+    VALUES (?, ?, 'member')
+    ON DUPLICATE KEY UPDATE
+      member_role = member_role
+  `
+
+  db.query(sql, [band_id, user_id], (err) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to add band member.'
+      })
+    }
+
+    res.json({
+      message: 'Band member added successfully.',
+      band_id,
+      user_id,
+      member_role: 'member'
+    })
+  })
+})
+
+
+//POST /api/admin/remove-band-member
+// only remove normal member, not leader, leader can reassign
+router.post('/remove-band-member', (req, res) => {
+  const { band_id, user_id } = req.body || {}
+
+  if (!band_id || !user_id) {
+    return res.status(400).json({
+      message: 'band_id and user_id are required.'
+    })
+  }
+
+  const sql = `
+    DELETE FROM band_members
+    WHERE band_id = ?
+      AND user_id = ?
+      AND member_role = 'member'
+  `
+
+  db.query(sql, [band_id, user_id], (err, result) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to remove band member.'
+      })
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        message: 'Band member not found, or this user is the leader.'
+      })
+    }
+
+    res.json({
+      message: 'Band member removed successfully.',
+      band_id,
+      user_id
+    })
+  })
+})
+
+
+
+// POST /api/admin/assign-band-leader
+// admin assigns/reassigns a leader to a band.
+// a user can only lead ONE active band.
+router.post('/assign-band-leader', (req, res) => {
+  const { band_id, user_id } = req.body || {}
+
+  if (!band_id || !user_id) {
+    return res.status(400).json({
+      message: 'band_id and user_id are required.'
+    })
+  }
+
+  const leaderCheckSql = `
+    SELECT id, name
+    FROM bands
+    WHERE leader_user_id = ?
+      AND is_active = TRUE
+      AND id <> ?
+  `
+
+  db.query(leaderCheckSql, [user_id, band_id], (leaderErr, existingLeaderBands) => {
+    if (leaderErr) {
+      console.error(leaderErr)
+      return res.status(500).json({
+        message: 'Failed to check existing leader assignment.'
+      })
+    }
+
+    if (existingLeaderBands.length > 0) {
+      return res.status(400).json({
+        message: 'This user is already the leader of another active band.',
+        existing_band: existingLeaderBands[0]
+      })
+    }
+
+    const updateBandSql = `
+      UPDATE bands
+      SET leader_user_id = ?
+      WHERE id = ?
+        AND is_active = TRUE
+    `
+
+    db.query(updateBandSql, [user_id, band_id], (updateBandErr, updateResult) => {
+      if (updateBandErr) {
+        console.error(updateBandErr)
+        return res.status(500).json({
+          message: 'Failed to assign band leader.'
+        })
+      }
+
+      if (updateResult.affectedRows === 0) {
+        return res.status(404).json({
+          message: 'Band not found or inactive.'
+        })
+      }
+
+      const demoteOldLeaderSql = `
+        UPDATE band_members
+        SET member_role = 'member'
+        WHERE band_id = ?
+          AND member_role = 'leader'
+      `
+
+      db.query(demoteOldLeaderSql, [band_id], (demoteErr) => {
+        if (demoteErr) {
+          console.error(demoteErr)
+          return res.status(500).json({
+            message: 'Leader assigned, but failed to demote old leader in members table.'
+          })
+        }
+
+        const addLeaderMemberSql = `
+          INSERT INTO band_members
+          (band_id, user_id, member_role)
+          VALUES (?, ?, 'leader')
+          ON DUPLICATE KEY UPDATE
+            member_role = 'leader'
+        `
+
+        db.query(addLeaderMemberSql, [band_id, user_id], (memberErr) => {
+          if (memberErr) {
+            console.error(memberErr)
+            return res.status(500).json({
+              message: 'Leader assigned, but failed to update band_members.'
+            })
+          }
+
+          const updateUserSql = `
+            UPDATE users
+            SET role = 'band'
+            WHERE id = ?
+          `
+
+          db.query(updateUserSql, [user_id], (userErr) => {
+            if (userErr) {
+              console.error(userErr)
+              return res.status(500).json({
+                message: 'Leader assigned, but failed to update user role.'
+              })
+            }
+
+            res.json({
+              message: 'Band leader assigned successfully.',
+              band_id,
+              user_id
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
+
+
+
 // admin confirm booking for winner bands (after running suggested-allocation algo)
 // POST /api/admin/confirm-booking
 router.post('/confirm-booking', (req, res) => {
@@ -772,6 +1029,7 @@ router.post('/confirm-booking', (req, res) => {
 
         // First slot = primary, second slot = extra
         const slotCategory = confirmedCount === 0 ? 'primary' : 'extra'
+        const confirmationDeadline = getBandConfirmationDeadline(slot_date, slot_time)
 
         const insertSql = `
           INSERT INTO bookings
@@ -783,9 +1041,11 @@ router.post('/confirm-booking', (req, res) => {
             slot_date,
             slot_time,
             allocation_score,
-            status
+            status,
+            band_confirmation_status,
+            band_confirmation_deadline
           )
-          VALUES (?, NULL, 'band', ?, ?, ?, ?, 'confirmed')
+          VALUES (?, NULL, 'band', ?, ?, ?, ?, 'confirmed','pending', ?)
         `
 
         db.query(
@@ -795,7 +1055,8 @@ router.post('/confirm-booking', (req, res) => {
             slotCategory,
             slot_date,
             slot_time,
-            allocation_score || null
+            allocation_score || null,
+            confirmationDeadline
           ],
           (insertErr, result) => {
             if (insertErr) {
@@ -814,12 +1075,14 @@ router.post('/confirm-booking', (req, res) => {
             }
 
             res.json({
-              message: 'Band booking confirmed successfully!',
+              message: 'Band booking confirmed by admin. Waiting for band leader confirmation.',
               booking_id: result.insertId,
               band_id,
               booking_type: 'band',
               slot_category: slotCategory,
-              status: 'confirmed'
+              status: 'confirmed',
+              band_confirmation_status: 'pending',
+              band_confirmation_deadline: confirmationDeadline
             })
           }
         )
@@ -827,6 +1090,9 @@ router.post('/confirm-booking', (req, res) => {
     )
   })
 })
+
+
+
 
 
 // Admin able to check the confirmed bookings
@@ -865,6 +1131,8 @@ router.get('/bookings', (req, res) => {
       res.json(results)
     })
   })
+
+
 
 
 
@@ -907,7 +1175,6 @@ router.get('/bookings', (req, res) => {
         })
 
     })
-
 
 
 
@@ -954,6 +1221,7 @@ router.get('/bookings', (req, res) => {
 
 
 
+
 // admin views all users
 // GET /api/admin/users
 router.get('/users', (req,res) => {
@@ -986,47 +1254,105 @@ router.get('/users', (req,res) => {
 
 
 
-// admin views all active bands and band leaders.
+
+
+
+// Admin views all active bands, their leaders, and their members (sync with frontend design)
 // ps: ?include_inactive=true if admin wants to see deactivated bands also
 // GET /api/admin/bands
 router.get('/bands', (req, res) => {
   const includeInactive = req.query.include_inactive === 'true'
 
-  let sql = `
+  let bandsSql = `
     SELECT
       bands.id,
       bands.name,
       bands.leader_user_id,
-      users.username AS leader_username,
-      users.email AS leader_email,
+      leader.username AS leader_username,
+      leader.email AS leader_email,
       bands.band_type,
       bands.is_active,
       bands.created_at
     FROM bands
-    LEFT JOIN users ON bands.leader_user_id = users.id
+    LEFT JOIN users AS leader
+      ON bands.leader_user_id = leader.id
   `
 
   if (!includeInactive) {
-    sql += `
+    bandsSql += `
       WHERE bands.is_active = TRUE
     `
   }
 
-  sql += `
+  bandsSql += `
     ORDER BY bands.id DESC
   `
 
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error(err)
+  db.query(bandsSql, (bandsErr, bands) => {
+    if (bandsErr) {
+      console.error(bandsErr)
       return res.status(500).json({
         message: 'Failed to fetch bands.'
       })
     }
 
-    res.json(results)
+    if (bands.length === 0) {
+      return res.json([])
+    }
+
+    const bandIds = bands.map((band) => band.id)
+
+    const membersSql = `
+      SELECT
+        band_members.band_id,
+        band_members.user_id,
+        band_members.member_role,
+        users.username,
+        users.email
+      FROM band_members
+      JOIN users
+        ON band_members.user_id = users.id
+      WHERE band_members.band_id IN (?)
+      ORDER BY
+        band_members.member_role DESC,
+        users.username
+    `
+
+    db.query(membersSql, [bandIds], (membersErr, members) => {
+      if (membersErr) {
+        console.error(membersErr)
+        return res.status(500).json({
+          message: 'Failed to fetch the band members.'
+        })
+      }
+
+      const membersByBand = {}
+
+      members.forEach((member) => {
+        if (!membersByBand[member.band_id]) {
+          membersByBand[member.band_id] = []
+        }
+
+        membersByBand[member.band_id].push({
+          user_id: member.user_id,
+          username: member.username,
+          email: member.email,
+          member_role: member.member_role
+        })
+      })
+
+      const response = bands.map((band) => ({
+        ...band,
+        members: membersByBand[band.id] || [],
+        member_count: (membersByBand[band.id] || []).length
+      }))
+
+      res.json(response)
+    })
   })
 })
+
+
 
 
 
@@ -1059,6 +1385,7 @@ router.get('/pending-users', (req, res) => {
         res.json(results)
     })
   })
+
 
 
 
@@ -1130,6 +1457,7 @@ router.post('/approve-user', (req,res) => {
         })
       })
     })
+
 
 
 
