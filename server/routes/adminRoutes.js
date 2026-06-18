@@ -662,6 +662,140 @@ router.post('/create-band', (req, res) => {
 })
 
 
+// POST /api/admin/edit-band-type
+// admin edits a band's type, affects allocation scoring
+// admin need to change the band type when performance ends etc
+router.post('/edit-band-type', (req, res) => {
+  const {
+    admin_user_id,
+    band_id,
+    band_type
+  } = req.body || {}
+
+  if (!admin_user_id || !band_id || !band_type) {
+    return res.status(400).json({
+      message: 'admin_user_id, band_id, and band_type are required.'
+    })
+  }
+
+  // accept frontend-friendly aliases
+  const bandTypeMap = {
+    standard: 'standard',
+    normal: 'standard',
+
+    cbtr: 'cbtr',
+    performance: 'cbtr',
+    performance_band: 'cbtr',
+
+    low_priority: 'low_priority',
+    ad_hoc: 'low_priority',
+    adhoc: 'low_priority',
+    senior: 'low_priority',
+    alumni: 'low_priority'
+  }
+
+  const normalizedBandType = bandTypeMap[String(band_type).trim().toLowerCase()]
+
+  if (!normalizedBandType) {
+    return res.status(400).json({
+      message: 'Invalid band_type. Must be standard, cbtr/performance, or low_priority.'
+    })
+  }
+
+  // 1: make sure this user is admin --> check
+  const adminSql = `
+    SELECT id, role, status
+    FROM users
+    WHERE id = ?
+  `
+
+  db.query(adminSql, [admin_user_id], (adminErr, adminResults) => {
+    if (adminErr) {
+      console.error(adminErr)
+      return res.status(500).json({
+        message: 'Failed to check admin permission.'
+      })
+    }
+
+    if (adminResults.length === 0) {
+      return res.status(404).json({
+        message: 'Admin user not found.'
+      })
+    }
+
+    const admin = adminResults[0]
+
+    if (admin.role !== 'admin' || admin.status !== 'approved') {
+      return res.status(403).json({
+        message: 'Only admin can update band type.'
+      })
+    }
+
+    // 2: find current band type first
+    const findBandSql = `
+      SELECT id, name, band_type, is_active
+      FROM bands
+      WHERE id = ?
+    `
+
+    db.query(findBandSql, [band_id], (findErr, bandResults) => {
+      if (findErr) {
+        console.error(findErr)
+        return res.status(500).json({
+          message: 'Failed to find band.'
+        })
+      }
+
+      if (bandResults.length === 0) {
+        return res.status(404).json({
+          message: 'Band not found.'
+        })
+      }
+
+      const band = bandResults[0]
+
+      if (!band.is_active) {
+        return res.status(400).json({
+          message: 'Cannot update type for an inactive band.'
+        })
+      }
+
+      if (band.band_type === normalizedBandType) {
+        return res.json({
+          message: 'Band type is already set to this value.',
+          band_id,
+          band_name: band.name,
+          band_type: normalizedBandType
+        })
+      }
+
+      // 3: update band type
+      const updateSql = `
+        UPDATE bands
+        SET band_type = ?
+        WHERE id = ?
+      `
+
+      db.query(updateSql, [normalizedBandType, band_id], (updateErr) => {
+        if (updateErr) {
+          console.error(updateErr)
+          return res.status(500).json({
+            message: 'Failed to update band type.'
+          })
+        }
+
+        return res.json({
+          message: 'Band type updated successfully.',
+          band_id,
+          band_name: band.name,
+          old_band_type: band.band_type,
+          new_band_type: normalizedBandType
+        })
+      })
+    })
+  })
+})
+
 
 // admin delete / de-activate a band
 // MS2 for now using soft delete, if need to change exact delete, will process later
@@ -676,7 +810,7 @@ router.post('/delete-band', (req, res) => {
     })
   }
 
-  // Optional safety check:
+  // Optional safety check (if suggested not needed then remove
   // Do not deactivate if this band still has future confirmed bookings.
   const futureBookingSql = `
     SELECT id
