@@ -1358,33 +1358,104 @@ router.get('/bookings', (req, res) => {
 
 // admin views all users
 // GET /api/admin/users
-router.get('/users', (req,res) => {
-        const sql = `
-            SELECT
-                users.id,
-                users.username,
-                users.email,
-                users.role,
-                users.status,
-                users.band_id,
-                bands.name AS band_name
-            FROM users
-            LEFT JOIN bands ON users.band_id = bands.id
-            ORDER BY users.id DESC
-        `
+// MS2: now also returns all bands each user belongs to.
+// keep band_id / band_name for backward compatibility with old frontend.
+router.get('/users', (req, res) => {
+  const usersSql = `
+    SELECT
+      id,
+      username,
+      email,
+      role,
+      status,
+      is_mr_certified,
+      telegram_chat_id,
+      NULL AS created_at
+    FROM users
+    ORDER BY id DESC
+  `
 
-        db.query(sql, (err, results) => {
-            if(err) {
-                console.error(err)
-                return res.status(500).json({
-                    message: 'Failed to fetch users.'
-                })
-            }
-            res.json(results)
+  db.query(usersSql, (userErr, users) => {
+    if (userErr) {
+      console.error(userErr)
+      return res.status(500).json({
+        message: 'Failed to fetch users.'
+      })
+    }
+
+    if (users.length === 0) {
+      return res.json([])
+    }
+
+    const userIds = users.map((user) => user.id)
+
+    const bandsSql = `
+      SELECT
+        band_members.user_id,
+        bands.id AS band_id,
+        bands.name AS band_name,
+        bands.band_type,
+        bands.leader_user_id,
+        band_members.member_role,
+        bands.is_active,
+        CASE
+          WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+          ELSE FALSE
+        END AS is_leader
+      FROM band_members
+      JOIN bands
+        ON band_members.band_id = bands.id
+      WHERE band_members.user_id IN (?)
+        AND bands.is_active = TRUE
+      ORDER BY bands.name
+    `
+
+    db.query(bandsSql, [userIds], (bandErr, bandRows) => {
+      if (bandErr) {
+        console.error(bandErr)
+        return res.status(500).json({
+          message: 'Failed to fetch user bands.'
         })
+      }
 
+      const bandsByUserId = {}
+
+      for (const row of bandRows) {
+        if (!bandsByUserId[row.user_id]) {
+          bandsByUserId[row.user_id] = []
+        }
+
+        bandsByUserId[row.user_id].push({
+          band_id: row.band_id,
+          band_name: row.band_name,
+          band_type: row.band_type,
+          leader_user_id: row.leader_user_id,
+          member_role: row.member_role,
+          is_active: row.is_active,
+          is_leader: Boolean(row.is_leader)
+        })
+      }
+
+      const result = users.map((user) => {
+        const bands = bandsByUserId[user.id] || []
+        const firstBand = bands[0] || null
+
+        return {
+          ...user,
+
+          // backward compatibility for old frontend
+          band_id: firstBand ? firstBand.band_id : null,
+          band_name: firstBand ? firstBand.band_name : null,
+
+          // new multi-band info
+          bands
+        }
+      })
+
+      res.json(result)
     })
-
+  })
+})
 
 
 
