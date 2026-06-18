@@ -1216,7 +1216,8 @@ router.post('/confirm-booking', (req, res) => {
               slot_category: slotCategory,
               status: 'confirmed',
               band_confirmation_status: 'pending',
-              band_confirmation_deadline: confirmationDeadline
+              band_confirmation_deadline: confirmationDeadline,
+              calendar_sync_status: 'not_synced'
             })
           }
         )

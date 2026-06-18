@@ -2,6 +2,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
 
 // helper function
 // fetch booking and check whether user is the band leader
@@ -140,6 +141,7 @@ router.get('/my-bookings', (req, res) => {
 
 // POST /api/band/confirm-booking
 // Band leader confirms an admin-confirmed band booking.
+// Google Calendar event is created ONLY after band leader confirms.
 router.post('/confirm-booking', (req, res) => {
   const { user_id, booking_id } = req.body || {}
 
@@ -175,13 +177,6 @@ router.post('/confirm-booking', (req, res) => {
       })
     }
 
-    if (booking.band_confirmation_status === 'confirmed') {
-      return res.json({
-        message: 'Booking already confirmed by band leader.',
-        booking_id
-      })
-    }
-
     if (booking.band_confirmation_status === 'released') {
       return res.status(400).json({
         message: 'This booking has already been released.'
@@ -194,6 +189,36 @@ router.post('/confirm-booking', (req, res) => {
     ) {
       return res.status(400).json({
         message: 'Band confirmation deadline has passed. This slot should be released.'
+      })
+    }
+
+    // If already confirmed, still try to sync calendar.
+    // This helps retry Google Calendar sync if it failed before.
+    if (booking.band_confirmation_status === 'confirmed') {
+      return createBookingEvent(booking_id, (calendarErr, calendarResult) => {
+        if (calendarErr) {
+          console.error('Google Calendar sync failed:', calendarErr)
+
+          return res.json({
+            message: 'Booking already confirmed by band leader, but Google Calendar sync failed.',
+            booking_id,
+            band_id: booking.band_id,
+            band_name: booking.band_name,
+            band_confirmation_status: 'confirmed',
+            calendar_sync_status: 'failed'
+          })
+        }
+
+        return res.json({
+          message: 'Booking already confirmed by band leader.',
+          booking_id,
+          band_id: booking.band_id,
+          band_name: booking.band_name,
+          band_confirmation_status: 'confirmed',
+          calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+          google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+          google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+        })
       })
     }
 
@@ -213,12 +238,30 @@ router.post('/confirm-booking', (req, res) => {
         })
       }
 
-      res.json({
-        message: 'Band booking confirmed successfully.',
-        booking_id,
-        band_id: booking.band_id,
-        band_name: booking.band_name,
-        band_confirmation_status: 'confirmed'
+      createBookingEvent(booking_id, (calendarErr, calendarResult) => {
+        if (calendarErr) {
+          console.error('Google Calendar sync failed:', calendarErr)
+
+          return res.json({
+            message: 'Band booking confirmed successfully, but Google Calendar sync failed.',
+            booking_id,
+            band_id: booking.band_id,
+            band_name: booking.band_name,
+            band_confirmation_status: 'confirmed',
+            calendar_sync_status: 'failed'
+          })
+        }
+
+        return res.json({
+          message: 'Band booking confirmed successfully.',
+          booking_id,
+          band_id: booking.band_id,
+          band_name: booking.band_name,
+          band_confirmation_status: 'confirmed',
+          calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+          google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+          google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+        })
       })
     })
   })
@@ -227,10 +270,8 @@ router.post('/confirm-booking', (req, res) => {
 
 
 // POST /api/band/release-booking
-/*
-Band leader releases an admin-confirmed band booking
-if knowing that the band can't mae it for this slot
-*/
+// Band leader releases a band booking.
+// If the booking has a Google Calendar event, delete it.
 router.post('/release-booking', (req, res) => {
   const {
     user_id,
@@ -298,13 +339,24 @@ router.post('/release-booking', (req, res) => {
           })
         }
 
-        res.json({
-          message: 'Band booking released successfully. Slot is returned to pool.',
-          booking_id,
-          band_id: booking.band_id,
-          band_name: booking.band_name,
-          status: 'cancelled',
-          band_confirmation_status: 'released'
+        deleteBookingEvent(booking_id, (calendarErr, calendarResult) => {
+          if (calendarErr) {
+            console.error('Failed to delete Google Calendar event:', calendarErr)
+          }
+
+          return res.json({
+            message: 'Band booking released successfully! Slot is returned to pool.',
+            booking_id,
+            band_id: booking.band_id,
+            band_name: booking.band_name,
+            status: 'cancelled',
+            band_confirmation_status: 'released',
+            calendar_sync_status: calendarErr
+              ? 'failed'
+              : calendarResult && calendarResult.skipped
+                ? 'skipped'
+                : 'deleted'
+          })
         })
       }
     )

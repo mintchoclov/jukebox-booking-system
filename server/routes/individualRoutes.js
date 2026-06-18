@@ -2,6 +2,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
 
 // valid 2-hour slot times
 const validSlotTimes = [
@@ -329,11 +330,28 @@ router.post('/book', (req, res) => {
                                     })
                                 }
 
-                                return res.json({
-                                    message: 'Self-practice booking confirmed successfully!',
-                                    booking_id: result.insertId,
-                                    status: 'confirmed',
-                                    slot_time
+                                createBookingEvent(result.insertId, (calendarErr, calendarResult) => {
+                                    if (calendarErr) {
+                                        console.error('Google Calendar sync failed:', calendarErr)
+
+                                        return res.json({
+                                            message: 'Self-practice booking confirmed successfully, but Google Calendar sync failed.',
+                                            booking_id: result.insertId,
+                                            status: 'confirmed',
+                                            slot_time,
+                                            calendar_sync_status: 'failed'
+                                        })
+                                    }
+
+                                    return res.json({
+                                        message: 'Self-practice booking confirmed successfully!',
+                                        booking_id: result.insertId,
+                                        status: 'confirmed',
+                                        slot_time,
+                                        calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+                                        google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+                                        google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+                                    })
                                 })
                             }
                         )
@@ -383,8 +401,8 @@ router.post('/book', (req, res) => {
                                 })
                             }
 
-                            // notify the original owner that their extra slot was displaced.
-                            // it is non-blocking: even if notification fails, booking should continue.
+                            // Notify the original owner that their extra slot was displaced.
+                            // Non-blocking: even if notification fails, booking should continue.
                             try {
                                 const notifications = require('../notifications')
 
@@ -397,32 +415,62 @@ router.post('/book', (req, res) => {
                                 console.error('Notification error:', e)
                             }
 
-                            db.query(
-                                insertSql,
-                                [
-                                    user_id,
-                                    'primary',
-                                    slot_date,
-                                    slot_time
-                                ],
-                                (insertErr, result) => {
-                                    if (insertErr) {
-                                        console.error(insertErr)
-                                        return res.status(500).json({
-                                            message: 'Failed to create self-practice booking.'
+                            // Delete old extra booking's Google Calendar event first.
+                            deleteBookingEvent(existingBooking.id, (deleteCalendarErr) => {
+                                if (deleteCalendarErr) {
+                                    console.error('Failed to delete displaced booking calendar event:', deleteCalendarErr)
+                                }
+
+                                // Then insert new primary booking.
+                                db.query(
+                                    insertSql,
+                                    [
+                                        user_id,
+                                        'primary',
+                                        slot_date,
+                                        slot_time
+                                    ],
+                                    (insertErr, result) => {
+                                        if (insertErr) {
+                                            console.error(insertErr)
+                                            return res.status(500).json({
+                                                message: 'Failed to create self-practice booking.'
+                                            })
+                                        }
+
+                                        // Create Google Calendar event for the new primary booking.
+                                        createBookingEvent(result.insertId, (createCalendarErr, calendarResult) => {
+                                            if (createCalendarErr) {
+                                                console.error('Google Calendar sync failed:', createCalendarErr)
+
+                                                return res.json({
+                                                    message: 'Extra slot displaced successfully! Primary booking confirmed, but Google Calendar sync failed.',
+                                                    displaced_booking_id: existingBooking.id,
+                                                    booking_id: result.insertId,
+                                                    status: 'confirmed',
+                                                    slot_category: 'primary',
+                                                    slot_time,
+                                                    displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
+                                                    calendar_sync_status: 'failed'
+                                                })
+                                            }
+
+                                            return res.json({
+                                                message: 'Extra slot displaced successfully! Primary booking confirmed!',
+                                                displaced_booking_id: existingBooking.id,
+                                                booking_id: result.insertId,
+                                                status: 'confirmed',
+                                                slot_category: 'primary',
+                                                slot_time,
+                                                displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
+                                                calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+                                                google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+                                                google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+                                            })
                                         })
                                     }
-
-                                    return res.json({
-                                        message: 'Extra slot displaced successfully! Primary booking confirmed!',
-                                        displaced_booking_id: existingBooking.id,
-                                        booking_id: result.insertId,
-                                        status: 'confirmed',
-                                        slot_category: 'primary',
-                                        slot_time
-                                    })
-                                }
-                            )
+                                )
+                            })
                         })
 
                         return
@@ -625,7 +673,7 @@ router.post('/cancel-booking', (req, res) => {
         user_id,
         booking_id,
         cancel_reason
-    } = req.body
+    } = req.body || {}
 
     if (!user_id || !booking_id) {
         return res.status(400).json({
@@ -664,7 +712,7 @@ router.post('/cancel-booking', (req, res) => {
             })
         }
 
-        // step 2: Check 72-hour cancellation rule
+        // Step 2: Check 72-hour cancellation rule
         const atLeast72HoursBefore = isAtLeast72HrsBefore(
             booking.slot_date,
             booking.slot_time
@@ -673,7 +721,7 @@ router.post('/cancel-booking', (req, res) => {
         const newStatus = atLeast72HoursBefore ? 'cancelled' : 'late_cancelled'
         const isLateCancellation = !atLeast72HoursBefore
 
-        // step 3: Update booking status
+        // Step 3: Update booking status
         const updateSql = `
             UPDATE bookings
             SET
@@ -703,18 +751,31 @@ router.post('/cancel-booking', (req, res) => {
                     })
                 }
 
-                res.json({
-                    message: isLateCancellation
-                        ? 'Booking cancelled late and logged.'
-                        : 'Booking cancelled successfully and returned to pool.',
-                    booking_id,
-                    status: newStatus,
-                    is_late_cancellation: isLateCancellation,
-                    cancel_reason: cancel_reason || null
+                deleteBookingEvent(booking_id, (calendarErr, calendarResult) => {
+                    if (calendarErr) {
+                        console.error('Failed to delete Google Calendar event:', calendarErr)
+                    }
+
+                    return res.json({
+                        message: isLateCancellation
+                            ? 'Booking cancelled late and logged.'
+                            : 'Booking cancelled successfully and returned to pool.',
+                        booking_id,
+                        status: newStatus,
+                        is_late_cancellation: isLateCancellation,
+                        cancel_reason: cancel_reason || null,
+                        calendar_sync_status: calendarErr
+                            ? 'failed'
+                            : calendarResult && calendarResult.skipped
+                                ? 'skipped'
+                                : 'deleted'
+                    })
                 })
             }
         )
     })
 })
+
+module.exports = router
 
 module.exports = router
