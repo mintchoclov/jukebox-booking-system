@@ -30,7 +30,7 @@ function SlotGrid({ weekDates, getSlotStyle, getSlotLabel, onSlotClick, selected
                   <div
                     key={`${di}-${ti}`}
                     onClick={() => onSlotClick(di, ti)}
-                    className={`rounded min-h-[28px] flex flex-col items-center justify-center transition-all ${style} ${isSelected ? 'ring-2 ring-navy ring-offset-1' : ''}`}
+                    className={`rounded min-h-[28px] flex flex-col items-center justify-center transition-all ${style}`} style={isSelected ? { boxShadow: 'inset 0 0 0 2px #09122C', borderRadius: '4px' } : undefined}
                   >
                     {lines.map((line, li) => (
                       <span

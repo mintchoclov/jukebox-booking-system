@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
-import Mascot from '../assets/mascot.svg'
+import AdminPic from '../assets/admin.svg'
+import SettingsPic from '../assets/settings.svg'
 import { Card, Button, Badge, SectionLabel, Spinner } from '../components/UI'
 import SlotGrid from '../components/Slotgrid'
 import { getWeekDates, getBookingDateStr, getDateStr } from '../components/dateutils'
@@ -19,6 +20,7 @@ function Admin({ user }) {
   const [confirmedBookings, setConfirmedBookings] = useState([])
   const [pendingUsers, setPendingUsers] = useState([])
   const [allUsers, setAllUsers] = useState([])
+  const [editUser, setEditUser] = useState(null)
   const [allBands, setAllBands] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +38,8 @@ function Admin({ user }) {
   const [newBandName, setNewBandName] = useState('')
   const [newBandType, setNewBandType] = useState('standard')
   const [expandedBand, setExpandedBand] = useState(null)
+  const [editingBand, setEditingBand] = useState(null)
+  const [editBandTypeValue, setEditBandTypeValue] = useState('standard')
 
   const weekDates = getWeekDates(weekOffset)
   const bookingsWeekDates = getWeekDates(bookingsWeekOffset)
@@ -294,61 +298,60 @@ function Admin({ user }) {
   }
 
   function addToBand(bandId, userId) {
-    fetch(`${API_URL}/api/admin/update-user-band`, {
+    fetch(`${API_URL}/api/admin/add-band-member`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, band_id: bandId })
+      body: JSON.stringify({ band_id: bandId, user_id: userId })
     })
-      .then(res => res.json())
-      .then(() => { fetchBands(); refreshUsers() })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to add user to band')
+        else { fetchBands(); refreshUsers() }
+      })
       .catch(() => setError('Failed to add user to band'))
   }
 
-  function removeFromBand(userId) {
-    const user = allUsers.find(u => u.id === userId)
-    const demoteIfLeader = user?.role === 'band'
-      ? fetch(`${API_URL}/api/admin/update-user-role`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId, role: 'individual' })
-        })
-      : Promise.resolve()
-
-    demoteIfLeader
-      .then(() => fetch(`${API_URL}/api/admin/update-user-band`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, band_id: null })
-      }))
-      .then(() => { fetchBands(); refreshUsers() })
+  function removeFromBand(bandId, userId) {
+    fetch(`${API_URL}/api/admin/remove-band-member`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ band_id: bandId, user_id: userId })
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to remove user from band') 
+        else {fetchBands(); refreshUsers() }
+      })
       .catch(() => setError('Failed to remove user from band'))
   }
 
   function setLeader(bandId, userId) {
-    const currentLeader = allUsers.find(u => u.band_id === bandId && u.role === 'band')
-
-    const demoteOldLeader = currentLeader
-      ? fetch(`${API_URL}/api/admin/update-user-role`, {
+    fetch(`${API_URL}/api/admin/assign-band-leader`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: currentLeader.id, role: 'individual' })
+      body: JSON.stringify({ band_id: bandId, user_id: userId })
         })
-      : Promise.resolve()
-
-    demoteOldLeader
-      .then(() => fetch(`${API_URL}/api/admin/update-user-band`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, band_id: bandId })
-      }))
-      .then(() => fetch(`${API_URL}/api/admin/update-user-role`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, role: 'band' })
-      }))
-      .then(() => { fetchBands(); refreshUsers() })
-      .catch(() => setError('Failed to set leader'))
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to assign band ')
+        else { fetchBands(); refreshUsers() }
+      })
+      .catch(() => setError('Failed to assign band leader'))
   }
+
+  function updateUserRole(userId, role) {
+    fetch(`${API_URL}/api/admin/update-user-role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, role })
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to update user role')
+        else { setEditUser(null); refreshUsers() }
+      })
+      .catch(() => setError('Failed to update user role'))
+  }  
 
   function deleteBand(bandId) {
     fetch(`${API_URL}/api/admin/delete-band`, {
@@ -398,6 +401,20 @@ function Admin({ user }) {
       .catch(() => setError('Failed to open bidding'))
   }
 
+  function editBandType(bandId, bandType) {
+    fetch(`${API_URL}/api/admin/edit-band-type`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_user_id: user.id, band_id: bandId, band_type: bandType })
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to update band type')
+        else { setEditingBand(null); fetchBands() }
+      })
+      .catch(() => setError('Failed to update band type'))
+  }
+
   function handleLogout() {
     localStorage.removeItem('user')
     navigate('/login')
@@ -417,8 +434,8 @@ function Admin({ user }) {
         <div className="bg-cream border-b border-beige">
           <div className="max-w-5xl mx-auto px-6 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <img src={Mascot} alt="mascot" className="w-7 h-7" />
-              <h1 className="text-sm font-medium text-navy">Admin Panel</h1>
+              <img src={AdminPic} alt="admin" className="w-50 h-20 -mr-10" />
+              <h1 className="text-2xl font-medium text-navy">Admin Panel</h1>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="pink">{user?.username}</Badge>
@@ -454,14 +471,16 @@ function Admin({ user }) {
               <SectionLabel>This week at a glance</SectionLabel>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 {[
-                  { num: confirmedBookings.length, label: 'Confirmed slots' },
-                  { num: pendingUsers.length, label: 'Pending users' },
-                  { num: bids.length, label: 'Bids submitted' },
-                  { num: allBands.length, label: 'Active bands' },
+                  { num: confirmedBookings.length, label: 'Confirmed slots', border: '#8DAB57', color: '#5B7B36', labelColor: '#788C5A' },
+                  { num: pendingUsers.length, label: 'Pending users', border: '#E0A93E', color: '#B07A18', labelColor: '#A98A52' },
+                  { num: bids.length, label: 'Bids submitted', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
+                  { num: allBands.length, label: 'Active bands', border: '#C97A9A', color: '#B0557A', labelColor: '#A87487' },
                 ].map((stat, i) => (
-                  <Card key={i} className="p-4 text-center">
-                    <div className="text-3xl font-medium text-navy">{stat.num}</div>
-                    <div className="text-xs text-navy opacity-50 mt-1">{stat.label}</div>
+                  <Card key={i} className="p-4 text-center" style={{ background: '#FFFDF8', border: `2px solid ${stat.border}` }}>
+                    <div className="text-3xl font-medium text-navy" style={{ color: stat.color }} >{stat.num}</div>
+                    <div className="text-xs text-navy mt-1" style={{ color: stat.labelColor }}>
+                      {stat.label}
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -894,8 +913,9 @@ function Admin({ user }) {
               ) : (
                 <div className="space-y-3 mb-6">
                   {allBands.map(band => {
-                    const members = allUsers.filter(u => u.band_id === band.id)
-                    const unassignedUsers = allUsers.filter(u => !u.band_id && u.status === 'approved')
+                    const members = band.members || []
+                    const memberIds = new Set(members.map(m => m.user_id))
+                    const unassignedUsers = allUsers.filter(u => !memberIds.has(u.id) && u.status === 'approved')
                     const isExpanded = expandedBand === band.id
                     return (
                       <Card key={band.id} className="p-4">
@@ -912,8 +932,8 @@ function Admin({ user }) {
                               </Badge>
                             </div>
                             <p className="text-xs text-navy opacity-50 mt-0.5">
-                              {members.length} member{members.length !== 1 ? 's' : ''}
-                              {band.leader_username && ` · Leader: ${band.leader_username}`}
+                              {band.member_count ?? members.length} member{(band.member_count ?? members.length) !== 1 ? 's' : ''}
+                              {` · Leader: ${band.leader_username || 'No leader'}`}
                             </p>
                           </div>
                           <button
@@ -934,26 +954,26 @@ function Admin({ user }) {
                               <p className="text-xs text-navy opacity-40 mb-3">No members yet</p>
                             ) : (
                               <div className="space-y-2 mb-4">
-                                {members.map(u => (
-                                  <div key={u.id} className="flex justify-between items-center py-1.5 border-b border-beige last:border-0">
+                                {members.map(m => (
+                                  <div key={m.user_id} className="flex justify-between items-center py-1.5 border-b border-beige last:border-0">
                                     <div className="flex items-center gap-2">
                                       <div className="w-7 h-7 rounded-full bg-pink flex items-center justify-center text-xs font-medium text-navy shrink-0">
-                                        {u.username?.charAt(0).toUpperCase()}
+                                        {m.username?.charAt(0).toUpperCase()}
                                       </div>
                                       <div>
-                                        <p className="text-xs font-medium text-navy">{u.username}</p>
-                                        <p className="text-xs text-navy opacity-40">{u.email}</p>
+                                        <p className="text-xs font-medium text-navy">{m.username}</p>
+                                        <p className="text-xs text-navy opacity-40">{m.email}</p>
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2 ml-2">
-                                      {u.role === 'band' ? (
+                                      {m.member_role === 'leader' ? (
                                         <Badge variant="primary">Leader</Badge>
                                       ) : (
-                                        <button onClick={() => setLeader(band.id, u.id)} className="text-xs text-navy opacity-40 hover:opacity-80">
+                                        <button onClick={() => setLeader(band.id, m.user_id)} className="text-xs text-navy opacity-40 hover:opacity-80">
                                           Set leader
                                         </button>
                                       )}
-                                      <button onClick={() => removeFromBand(u.id)} className="text-xs text-dangerText opacity-60 hover:opacity-100">
+                                      <button onClick={() => removeFromBand(band.id,m.user_id)} className="text-xs text-dangerText opacity-60 hover:opacity-100">
                                         Remove
                                       </button>
                                     </div>
@@ -999,6 +1019,40 @@ function Admin({ user }) {
                                     ))}
                                 </div>
                               </div>
+                            )}
+
+                            {editingBand === band.id ? (
+                              <div className="mb-3">
+                                <p className="text-xs font-medium text-navy mb-1">Change band type</p>
+                                <div className="flex gap-2 flex-wrap mb-2">
+                                  {[
+                                    { value: 'standard', label: 'Standard' },
+                                    { value: 'cbtr', label: 'Performance' },
+                                    { value: 'low_priority', label: 'Ad-hoc / Senior' },
+                                  ].map(t => (
+                                    <button
+                                      key={t.value}
+                                      onClick={() => setEditBandTypeValue(t.value)}
+                                      className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                                        editBandTypeValue === t.value
+                                          ? 'bg-primary border-primary text-navy font-medium'
+                                          : 'bg-cream border-beige text-navy'
+                                      }`}
+                                    >{t.label}</button>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button variant="primary" className="px-4 py-1.5 text-xs" onClick={() => editBandType(band.id, editBandTypeValue)}>Save type</Button>
+                                  <Button variant="muted" className="px-4 py-1.5 text-xs" onClick={() => setEditingBand(null)}>Cancel</Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setEditingBand(band.id); setEditBandTypeValue(band.band_type) }}
+                                className="text-xs text-navy opacity-60 hover:opacity-100 mb-2 block"
+                              >
+                                Edit band type
+                              </button>
                             )}
 
                             <button onClick={() => deleteBand(band.id)} className="text-xs text-dangerText opacity-60 hover:opacity-100">
@@ -1054,13 +1108,28 @@ function Admin({ user }) {
                         <div>
                           <p className="text-sm font-medium text-navy">{u.username}</p>
                           <p className="text-xs text-navy opacity-40">
-                            {u.band_name || 'No band'}
-                            {u.role === 'band' ? ' · Leader' : ''}
+                            {u.bands && u.bands.length > 0
+                              ? u.bands.map(b => b.is_leader ? `${b.band_name} (Leader)` : b.band_name).join(', ')
+                              : 'No band'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap justify-end">
-                        <Badge variant={u.role === 'admin' ? 'primary' : u.role === 'band' ? 'pink' : 'default'}>{u.role}</Badge>
+                        {editUser === u.id ? (
+                          <select
+                            value={u.role}
+                            onChange={e => updateUserRole(u.id, e.target.value)}
+                            className="text-xs border border-beige rounded-full px-2 py-1 bg-cream text-navy outline-none focus:border-primary"
+                          >
+                            <option value="individual">individual</option>
+                            <option value="band">band</option>
+                            <option value="admin">admin</option>
+                          </select>
+                        ) : (
+                          <button onClick={() => setEditUser(u.id)} title="Click to change role">
+                            <Badge variant={u.role === 'admin' ? 'primary' : u.role === 'band' ? 'pink' : 'default'}>{u.role}</Badge>
+                          </button>
+                        )}
                         <Badge variant={u.status === 'approved' ? 'success' : u.status === 'pending' ? 'default' : 'danger'}>{u.status}</Badge>
                         {u.is_mr_certified && <Badge variant="success">MR ✓</Badge>}
                       </div>

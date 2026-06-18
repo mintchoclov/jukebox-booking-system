@@ -53,6 +53,12 @@
   to { transform: rotate(360deg); }
 }
 
+@media (min-width: 768px) {
+  #root {
+    zoom: 1.02;
+  }
+}
+
 body {
   background-color: #FDF6E3;
   font-family: 'Poppins', sans-serif;

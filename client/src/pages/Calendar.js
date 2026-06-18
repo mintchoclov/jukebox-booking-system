@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
 import shake from '../hooks/shake'
+import CalendarPic from '../assets/calender2.svg'
 import { Card, Button, Badge, Spinner, ErrorText } from '../components/UI'
 import { getDateStr, getBookingDateStr, getWeekDates, isBookingWindowOpen, isAtLeast72Hours, getWeekRange } from '../components/dateutils'
 import { slotStyles, legendItems, TIME_SLOTS, DAYS} from '../components/calendarstyle'
@@ -110,7 +111,7 @@ function Calendar() {
   function hasPrimaryThisWeek(date) {
     const { weekMonday, weekSunday } = getWeekRange(date)
     return myBookings.some(b => {
-      const bDate = new Date(b.slot_date?.slice(0, 10) + 'T12:00:00')
+      const bDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
       return bDate >= weekMonday && bDate <= weekSunday &&
         b.slot_category === 'primary' && b.status === 'confirmed'
     })
@@ -271,8 +272,13 @@ function Calendar() {
 
         {/* header */}
         <Card className="p-6 text-center mb-6">
-          <h1 className="text-2xl font-medium text-navy mb-1">Music Room Calendar 🎵</h1>
-          <p className="text-sm text-navy opacity-50">Click an available slot to book it</p>
+          <div className="flex items-center justify-center gap-0 -ml-11">
+            <img src={CalendarPic} alt="Calendar" className="w-30 h-20 -mr-6" />
+            <div>
+              <h1 className="text-2xl font-medium text-navy mb-1">Music Room Calendar 🎵</h1>
+              <p className="text-sm text-navy opacity-50">Click an available slot to book it</p>
+            </div>
+          </div>
         </Card>
 
         {/* slot detail panel */}

@@ -3,16 +3,41 @@ import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import { Card, Button, Spinner, Badge, SectionLabel, FormError } from '../components/UI'
+import { getBookingDateStr } from '../components/dateutils'
+
+function getNextBiddingWeekMonday() {
+  const now = new Date()
+  const day = now.getDay()
+  const daysUntilMonday = (8 - day) % 7 || 7
+  const targetMonday = new Date(now)
+  targetMonday.setDate(now.getDate() + daysUntilMonday)
+  targetMonday.setHours(0, 0, 0, 0)
+
+  const deadline = new Date(targetMonday)
+  deadline.setDate(targetMonday.getDate() - 4)
+  deadline.setHours(12, 0, 0, 0)
+
+  if (now > deadline) {
+    targetMonday.setDate(targetMonday.getDate() + 7)
+  }
+
+  const year = targetMonday.getFullYear()
+  const month = String(targetMonday.getMonth() + 1).padStart(2, '0')
+  const day2 = String(targetMonday.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day2}`
+}
 
 function Leader({user}) {
   const navigate = useNavigate()
   const [bookings, setBookings] = useState([])
   const [bids, setBids] = useState([])
-  const [biddingOpen, setBiddingOpen] = useState(true) // hardcoded true for testing
+  const [biddingWeekStart, setBiddingWeekStart] = useState('')
+  const [biddingOpen, setBiddingOpen] = useState(false) 
   const [loading, setLoading] = useState(true)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_URL}/api/admin/bookings`)
+    fetch(`${API_URL}/api/band/my-bookings?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
         setBookings(Array.isArray(data) ? data : [])
@@ -24,22 +49,58 @@ function Leader({user}) {
       .then(res => res.json())
       .then(data => setBids(Array.isArray(data) ? data : []))
       .catch(() => {})
+    
+    const weekMonday = getNextBiddingWeekMonday()
+    setBiddingWeekStart(weekMonday)
 
-    // revert to actual bidding status check after testing
-    // const now = new Date()
-    // const day = now.getDay()
-    // const monday = new Date(now)
-    // monday.setDate(now.getDate() - ((day + 6) % 7) + 7)
-    // const weekStart = monday.toISOString().split('T')[0]
-    // fetch(`${API_URL}/api/admin/bidding-status?week_start=${weekStart}`)
-    //   .then(res => res.json())
-    //   .then(data => setBiddingOpen(data.is_open))
-    //   .catch(() => {})
+    fetch(`${API_URL}/api/admin/bidding-status?target_week_monday=${weekMonday}`)
+      .then(res => res.json())
+      .then(data => setBiddingOpen(data.is_open))
+      .catch(() => { })
+
   }, [])
 
   function handleLogout() {
     localStorage.removeItem('user')
     navigate('/login')
+  }
+
+  function confirmBooking(bookingId) {
+    setActionError('')
+    fetch(`${API_URL}/api/band/confirm-booking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id, booking_id: bookingId })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.message?.includes('Failed') || data.message?.includes('passed') || data.message?.includes('Only')) {
+          setActionError(data.message)
+        } else {
+          setBookings(prev => prev.map(b =>
+            b.booking_id === bookingId ? { ...b, band_confirmation_status: 'confirmed' } : b
+          ))
+        }
+      })
+      .catch(() => setActionError('Failed to confirm booking'))
+  }
+
+  function releaseBooking(bookingId) {
+    setActionError('')
+    fetch(`${API_URL}/api/band/release-booking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id, booking_id: bookingId, release_reason: 'Released by band leader' })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.message?.includes('Failed') || data.message?.includes('Only')) {
+          setActionError(data.message)
+        } else {
+          setBookings(prev => prev.filter(b => b.booking_id !== bookingId))
+        }
+      })
+      .catch(() => setActionError('Failed to release booking'))
   }
 
   const now = new Date()
@@ -51,24 +112,28 @@ function Leader({user}) {
   weekEnd.setHours(23, 59, 59, 999)
 
   const thisWeekSlots = bookings.filter(b => {
-    const slotDate = new Date(new Date(b.slot_date).getTime() + 8 * 60 * 60 * 1000)
+    const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
     return slotDate >= weekStart && slotDate <= weekEnd &&
-      b.status === 'confirmed' &&
+      b.status === 'confirmed' 
+  })
+
+  const pendingConfirmation = bookings.filter(b =>
+    b.status === 'confirmed' && b.band_confirmation_status === 'pending'
+  )
+
+  const [y, m, d] = biddingWeekStart ? biddingWeekStart.split('-').map(Number) : [0, 0, 0]
+  const targetWeekMonday = biddingWeekStart ? new Date(y, m - 1, d) : null
+  const targetWeekSunday = targetWeekMonday ? new Date(targetWeekMonday.getTime() + 6 * 24 * 60 * 60 * 1000) : null
+
+  const targetWeekBids = bids.filter(b => {
+    if (!targetWeekMonday) return false
+    const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+    return slotDate >= targetWeekMonday && slotDate <= targetWeekSunday &&
       b.band_id === user.band_id
   })
 
-  const nextWeekStart = new Date(weekStart)
-  nextWeekStart.setDate(weekStart.getDate() + 7)
-  const nextWeekEnd = new Date(nextWeekStart)
-  nextWeekEnd.setDate(nextWeekStart.getDate() + 6)
 
-  const nextWeekBids = bids.filter(b => {
-    const slotDate = new Date(new Date(b.slot_date).getTime() + 8 * 60 * 60 * 1000)
-    return slotDate >= nextWeekStart && slotDate <= nextWeekEnd &&
-      b.band_id === user.band_id
-  })
-
-  const bidsSubmitted = nextWeekBids.length >= 3
+  const bidsSubmitted = targetWeekBids.length >= 2
 
   function getNextBiddingDeadline() {
     const now = new Date()
@@ -99,6 +164,46 @@ function Leader({user}) {
           <p className="text-xs text-navy opacity-40 mt-1">Band Leader</p>
         </Card>
 
+        {/* pending band confirmation */}
+        {pendingConfirmation.length > 0 && (
+          <Card className="p-5 mb-4 bg-primarySoft">
+            <SectionLabel>Action needed — confirm or release</SectionLabel>
+            {actionError && <p className="text-dangerText text-xs mb-2">{actionError}</p>}
+            <div className="space-y-3">
+              {pendingConfirmation.map(slot => (
+                <div key={slot.booking_id} className="bg-white rounded-xl p-3">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-xs text-navy opacity-50">
+                        {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                          weekday: 'short', day: 'numeric', month: 'short'
+                        })}
+                      </p>
+                      <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                      {slot.band_confirmation_deadline && (
+                        <p className="text-xs text-dangerText opacity-70 mt-1">
+                          Confirm by: {new Date(slot.band_confirmation_deadline).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="pink">Awaiting you</Badge>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="primary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => confirmBooking(slot.booking_id)}>
+                      Confirm slot
+                    </Button>
+                    <Button variant="secondary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => releaseBooking(slot.booking_id)}>
+                      Release slot
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         {/* this week's slot */}
         <Card className="p-5 mb-4">
           <SectionLabel>This week's slot</SectionLabel>
@@ -108,11 +213,11 @@ function Leader({user}) {
             </p>
           ) : (
             thisWeekSlots.map(slot => (
-              <div key={slot.id} className="bg-primarySoft rounded-xl p-3 mb-2">
+              <div key={slot.booking_id} className="bg-primarySoft rounded-xl p-3 mb-2">
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-xs text-navy opacity-50">
-                      {new Date(new Date(slot.slot_date).getTime() + 8 * 60 * 60 * 1000).toLocaleDateString('en-GB', {
+                      {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
                         weekday: 'short', day: 'numeric', month: 'short'
                       })}
                     </p>
@@ -123,7 +228,8 @@ function Leader({user}) {
                       {slot.band_name}
                     </p>
                   </div>
-                  <Badge variant="success">Confirmed ✓</Badge>
+                  <Badge variant={slot.band_confirmation_status === 'confirmed' ? 'success' : 'pink'}>{slot.band_confirmation_status === 'confirmed' ? 'Confirmed ✓' : 'Awaiting confirmation'}
+                  </Badge>
                 </div>
               </div>
             ))
