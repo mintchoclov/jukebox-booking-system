@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     cancelled_at TIMESTAMP NULL,
     is_late_cancellation BOOLEAN DEFAULT FALSE,
     calendar_event_id VARCHAR(255),
-    calendar_sync_status ENUM('not_synced', 'synced', 'failed') DEFAULT 'not_synced',
+    calendar_sync_status ENUM('not_synced', 'synced', 'deleted', 'failed', 'skipped') DEFAULT 'not_synced',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
