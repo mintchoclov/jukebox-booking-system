@@ -11,14 +11,14 @@ function SlotGrid({ weekDates, getSlotStyle, getSlotLabel, onSlotClick, selected
           <div></div>
           {weekDates.map((d, i) => (
             <div key={i} className="text-center pb-1">
-              <p className="text-navy opacity-50" style={{ fontSize: '9px', fontWeight: 500 }}>{days[i]}</p>
-              <p className="text-navy opacity-30" style={{ fontSize: '8px' }}>{d.getDate()}</p>
+              <p className="text-navy" style={{ fontSize: '9px', fontWeight: 500 }}>{days[i]}</p>
+              <p className="text-navy" style={{ fontSize: '8px' }}>{d.getDate()}</p>
             </div>
           ))}
           {times.map((time, ti) => (
             <React.Fragment key={ti}>
               <div className="flex items-center justify-end pr-1">
-                <span className="text-navy opacity-40" style={{ fontSize: '8px' }}>{time}</span>
+                <span className="text-navy" style={{ fontSize: '8px' }}>{time}</span>
               </div>
               {weekDates.map((date, di) => {
                 const style = getSlotStyle(di, ti, date)
@@ -41,7 +41,8 @@ function SlotGrid({ weekDates, getSlotStyle, getSlotLabel, onSlotClick, selected
                           lineHeight: '1.3',
                           textAlign: 'center',
                           padding: '0 1px',
-                          opacity: li === 1 ? 0.6 : 0.9
+                          opacity: li === 1 ? 0.6 : 0.9,
+                          fontWeight: 700
                         }}
                       >
                         {line}

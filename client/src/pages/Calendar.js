@@ -262,7 +262,7 @@ function Calendar() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
-      <p className="text-navy opacity-50 text-sm">Loading...</p>
+      <p className="text-navy text-sm">Loading...</p>
     </div>
   )
 
@@ -276,7 +276,7 @@ function Calendar() {
             <img src={CalendarPic} alt="Calendar" className="w-30 h-20 -mr-6" />
             <div>
               <h1 className="text-2xl font-medium text-navy mb-1">Music Room Calendar 🎵</h1>
-              <p className="text-sm text-navy opacity-50">Click an available slot to book it</p>
+              <p className="text-sm text-navy">Click an available slot to book it</p>
             </div>
           </div>
         </Card>
@@ -288,7 +288,7 @@ function Calendar() {
               <p className="text-sm font-medium text-navy">Slot details</p>
               <button
                 onClick={() => { setSelectedSlot(null); setBookingError('') }}
-                className="text-xs text-navy opacity-40"
+                className="text-xs text-navy"
               >✕</button>
             </div>
             <div className="bg-primarySoft rounded-xl p-4 mb-4">
@@ -297,7 +297,7 @@ function Calendar() {
                   weekday: 'long', day: 'numeric', month: 'long'
                 })}
               </p>
-              <p className="text-xs text-navy opacity-60 mt-1">
+              <p className="text-xs text-navy mt-1">
                 {selectedSlot.slot_time?.slice(0, 5)}
               </p>
               <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -333,7 +333,7 @@ function Calendar() {
                   </Button>
                 )}
                 {selectedSlot.date && !isAtLeast72Hours(selectedSlot.date, selectedSlot.slot_time?.slice(0, 5)) && (
-                  <p className="text-xs text-navy opacity-40 text-center mt-2">
+                  <p className="text-xs text-navy text-center mt-2">
                     ⚠️ Less than 72 hours away — this will be logged as a late cancellation
                   </p>
                 )}
@@ -344,7 +344,7 @@ function Calendar() {
             {canDisplace(selectedSlot) && (
               <div>
                 <div className="bg-beige rounded-xl p-3 mb-3">
-                  <p className="text-xs text-navy opacity-60">
+                  <p className="text-xs text-navy">
                     This is an extra slot. Since you have no primary slot this week, you can take it as your primary!
                   </p>
                 </div>
@@ -370,7 +370,7 @@ function Calendar() {
               <p className="text-sm font-medium text-navy">Book this slot</p>
               <button
                 onClick={() => { setSelectedAvailableSlot(null); setBookingError('') }}
-                className="text-xs text-navy opacity-40"
+                className="text-xs text-navy"
               >✕</button>
             </div>
             <div className="bg-primarySoft rounded-xl p-3 mb-4">
@@ -379,7 +379,7 @@ function Calendar() {
                   weekday: 'long', day: 'numeric', month: 'long'
                 })}
               </p>
-              <p className="text-xs text-navy opacity-60 mt-0.5">
+              <p className="text-xs text-navy mt-0.5">
                 {TIME_SLOTS.find(t => t.value === selectedAvailableSlot.time)?.label}
               </p>
             </div>
@@ -403,7 +403,7 @@ function Calendar() {
                   }`}
                 >Extra</button>
               </div>
-              <p className="text-xs text-navy opacity-40 mt-1">
+              <p className="text-xs text-navy mt-1">
                 {slotCategory === 'primary'
                   ? 'Your main slot for the week'
                   : 'Additional slot — requires a primary slot first'}
@@ -441,7 +441,7 @@ function Calendar() {
           {legendItems.map((l, i) => (
             <div key={i} className="flex items-center gap-1">
               <div className={`w-3 h-3 rounded ${l.style}`}></div>
-              <span className="text-xs text-navy opacity-50">{l.label}</span>
+              <span className="text-xs text-navy">{l.label}</span>
             </div>
           ))}
         </div>
