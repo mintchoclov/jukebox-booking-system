@@ -1460,6 +1460,123 @@ router.get('/users', (req, res) => {
 
 
 
+// POST /api/admin/delete-user
+// admin soft-deletes / deactivates a user.
+// same as for delete-band, do not hard delete users because booking history should be preserved
+router.post('/delete-user', (req, res) => {
+  const { admin_user_id, user_id } = req.body || {}
+
+  if (!admin_user_id || !user_id) {
+    return res.status(400).json({
+      message: 'admin_user_id and user_id are required.'
+    })
+  }
+
+  if (Number(admin_user_id) === Number(user_id)) {
+    return res.status(400).json({
+      message: 'Admin cannot delete their own account.'
+    })
+  }
+
+  const adminSql = `
+    SELECT id, role, status
+    FROM users
+    WHERE id = ?
+  `
+
+  db.query(adminSql, [admin_user_id], (adminErr, adminResults) => {
+    if (adminErr) {
+      console.error(adminErr)
+      return res.status(500).json({
+        message: 'Failed to check admin permission.'
+      })
+    }
+
+    if (adminResults.length === 0) {
+      return res.status(404).json({
+        message: 'Admin user not found.'
+      })
+    }
+
+    const admin = adminResults[0]
+
+    if (admin.role !== 'admin' || admin.status !== 'approved') {
+      return res.status(403).json({
+        message: 'Only approved admin users can delete users.'
+      })
+    }
+
+    // Do not delete a user who is currently a band leader.
+    // Admin should assign a new leader first.
+    const leaderSql = `
+      SELECT id, name
+      FROM bands
+      WHERE leader_user_id = ?
+        AND is_active = TRUE
+    `
+
+    db.query(leaderSql, [user_id], (leaderErr, leaderBands) => {
+      if (leaderErr) {
+        console.error(leaderErr)
+        return res.status(500).json({
+          message: 'Failed to check whether user is a band leader.'
+        })
+      }
+
+      if (leaderBands.length > 0) {
+        return res.status(400).json({
+          message: 'This user is currently a band leader. Please assign a new leader before deleting this user.',
+          bands: leaderBands
+        })
+      }
+
+      // Soft delete: suspend user account.
+      const updateUserSql = `
+        UPDATE users
+        SET status = 'suspended'
+        WHERE id = ?
+      `
+
+      db.query(updateUserSql, [user_id], (updateErr, updateResult) => {
+        if (updateErr) {
+          console.error(updateErr)
+          return res.status(500).json({
+            message: 'Failed to delete user.'
+          })
+        }
+
+        if (updateResult.affectedRows === 0) {
+          return res.status(404).json({
+            message: 'User not found.'
+          })
+        }
+
+        // Remove normal band memberships after deactivation.
+        // Booking history is still preserved in bookings table.
+        const removeMembershipSql = `
+          DELETE FROM band_members
+          WHERE user_id = ?
+        `
+
+        db.query(removeMembershipSql, [user_id], (memberErr) => {
+          if (memberErr) {
+            console.error(memberErr)
+            return res.status(500).json({
+              message: 'User suspended, but failed to remove band memberships.'
+            })
+          }
+
+          return res.json({
+            message: 'User deleted successfully.',
+            user_id,
+            status: 'suspended'
+          })
+        })
+      })
+    })
+  })
+})
+
 
 
 
