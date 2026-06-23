@@ -297,6 +297,21 @@ function Admin({ user }) {
       .catch(() => setError('Failed to reject user'))
   }
 
+  function deleteUser(userId) {
+    if (!window.confirm('Suspend this user? They will lose access but their booking history is kept.')) return
+    fetch(`${API_URL}/api/admin/delete-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin_user_id: user.id, user_id: userId })
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) setError(data.message || 'Failed to delete user')
+        else { setError(''); refreshUsers() }
+      })
+      .catch(() => setError('Failed to delete user'))
+  }
+
   function addToBand(bandId, userId) {
     fetch(`${API_URL}/api/admin/add-band-member`, {
       method: 'POST',
@@ -1132,6 +1147,15 @@ function Admin({ user }) {
                         )}
                         <Badge variant={u.status === 'approved' ? 'success' : u.status === 'pending' ? 'default' : 'danger'}>{u.status}</Badge>
                         {u.is_mr_certified && <Badge variant="success">MR ✓</Badge>}
+                        {u.id !== user.id && u.status !== 'suspended' && (
+                          <button
+                            onClick={() => deleteUser(u.id)}
+                            className="text-xs text-dangerText opacity-60 hover:opacity-100"
+                            title="Suspend user"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   </Card>

@@ -1,3 +1,7 @@
+# test 
+server/__tests__/
+client/src/components/dateutils.test.js
+
 # Logs
 logs
 *.log
@@ -162,3 +166,7 @@ Thumbs.db
 
 # Local automated tests only
 tests/
+*.test.js
+*.spec.js
+jest.config.js
+jest-results.json
