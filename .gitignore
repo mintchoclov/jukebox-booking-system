@@ -164,9 +164,9 @@ jest-results.json
 .DS_Store
 Thumbs.db
 
-# Local automated tests only
-tests/
-*.test.js
-*.spec.js
-jest.config.js
-jest-results.json
+# Local server automated tests only
+server/tests/
+server/*.test.js
+server/*.spec.js
+server/jest.config.js
+server/jest-results.json
