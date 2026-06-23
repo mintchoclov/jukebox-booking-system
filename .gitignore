@@ -144,3 +144,21 @@ vite.config.ts.timestamp-*
 
 # added
 .idea/
+
+# Google Calendar / service account credentials
+google-credentials.json
+google-service-account.json
+service-account.json
+*service-account*.json
+*credentials*.json
+jukebox-booking-system*.json
+
+# Jest output
+jest-results.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local automated tests only
+tests/
