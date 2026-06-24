@@ -1,7 +1,8 @@
 const { Resend } = require('resend')
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 async function sendOtpEmail(to, otp) {
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    
     const { data, error } = await resend.emails.send({
         from: 'JukeBox <onboarding@resend.dev>',
         to,
