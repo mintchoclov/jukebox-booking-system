@@ -294,6 +294,7 @@ function Admin({ user }) {
     })
       .then(res => res.json())
       .then(() => setPendingUsers(pendingUsers.filter(u => u.id !== userId)))
+      .then(() => refreshUsers())
       .catch(() => setError('Failed to reject user'))
   }
 
@@ -1146,7 +1147,9 @@ function Admin({ user }) {
                           </button>
                         )}
                         <Badge variant={u.status === 'approved' ? 'success' : u.status === 'pending' ? 'default' : 'danger'}>{u.status}</Badge>
-                        {u.is_mr_certified && <Badge variant="success">MR ✓</Badge>}
+                        <Badge variant={u.is_mr_certified ? 'success' : 'danger'}>
+                          {u.is_mr_certified ? 'MR ✓' : 'Not certified'}
+                        </Badge>
                         {u.id !== user.id && u.status !== 'suspended' && (
                           <button
                             onClick={() => deleteUser(u.id)}
@@ -1218,19 +1221,24 @@ function Admin({ user }) {
                   </div>
                   <span className="text-xs text-navy opacity-40">›</span>
                 </Card>
-                <Card className="p-4 flex justify-between items-center">
+                <a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block"
+                >
+                <Card className="p-4 flex justify-between items-center hover:opacity-80 transition-opacity">
                   <div>
-                    <p className="text-sm font-medium text-navy">Google Calendar sync</p>
-                    <p className="text-xs text-navy opacity-50 mt-1">Coming in MS2</p>
+                    <p className="text-sm font-medium text-navy">Google Calendar</p>
+                    <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
                   </div>
-                  <Badge>Soon</Badge>
+                  <Badge variant="success">Open ↗</Badge>
                 </Card>
-              </div>
-
+              </a>
               {error && <p className="text-dangerText text-xs mb-4">{error}</p>}
               <Button variant="secondary" className="px-8" onClick={handleLogout}>
                 Log Out
               </Button>
+            </div>
             </div>
           )}
 

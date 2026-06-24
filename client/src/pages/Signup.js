@@ -1,28 +1,37 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import shake from '../hooks/shake'
 import { Card, Button, Spinner, Label, ErrorText } from '../components/UI'
 
 function Signup() {
+  const [step, setStep] = useState('form')
   const [username, setUsername] = useState('')
   const [emailPrefix, setEmailPrefix] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [resendIn, setResendIn] = useState(0)
 
   const { shakeStyle, triggerShake } = shake()
-  
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const t = setInterval(() => setResendIn((s) => s - 1), 1000)
+    return () => clearInterval(t)
+  }, [resendIn])
+
   function handleEmailChange(e) {
     const prefix = e.target.value
     setEmailPrefix(prefix)
     setEmail(prefix + '@u.nus.edu')
   }
 
-  function handleSubmit(e) {
+  function handleSendCode(e) {
     e.preventDefault()
 
     if (!username || !emailPrefix || !password) {
@@ -47,10 +56,44 @@ function Signup() {
     setLoading(true)
     setError('')
 
-    fetch(`${API_URL}/api/auth/register`, {
+    fetch(`${API_URL}/api/auth/request-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password, role: 'individual' })
+      body: JSON.stringify({ email })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setLoading(false)
+        if (data.error) {
+          setError(data.error)
+          triggerShake()
+        } else {
+          setStep('otp')
+          setResendIn(60)
+        }
+      })
+      .catch(() => {
+        setLoading(false)
+        setError('Something went wrong. Please try again.')
+        triggerShake()
+      })
+  }
+  function handleVerify(e) {
+    e.preventDefault()
+
+    if (otp.trim().length !== 6) {
+      setError('Please enter the 6-digit code')
+      triggerShake()
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    fetch(`${API_URL}/api/auth/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp: otp.trim(), username, password })
     })
       .then(res => res.json())
       .then(data => {
@@ -64,6 +107,28 @@ function Signup() {
       })
       .catch(() => {
         setLoading(false)
+        setError('Something went wrong. Please try again.')
+        triggerShake()
+      })
+  }
+  function handleResend() {
+    if (resendIn > 0) return
+    setError('')
+    fetch(`${API_URL}/api/auth/request-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          setError(data.error)
+          triggerShake()
+        } else {
+          setResendIn(60)
+        }
+      })
+      .catch(() => {
         setError('Something went wrong. Please try again.')
         triggerShake()
       })
@@ -87,6 +152,77 @@ function Signup() {
               Back to Login
             </Button>
           </Card>
+        </div>
+      </div>
+    )
+  }
+  if (step === 'otp') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 relative">
+        <div className="w-full max-w-sm md:max-w-md lg:max-w-lg relative z-10">
+
+          <Card className="p-6 text-center mb-6">
+            <h1 className="text-3xl font-semibold text-navy mb-3">Check Your Email</h1>
+            <img src={Mascot} alt="JukeBox mascot" className="w-64 mx-auto mb-3" />
+            <p className="text-sm text-navy opacity-50">
+              We sent a 6-digit code to <span className="font-bold">{email}</span>
+            </p>
+          </Card>
+
+          <Card className="p-6" style={shakeStyle}>
+            {/* progress: step 2 of 3 */}
+            <div className="flex justify-center gap-2 mb-5">
+              <div className="h-1 w-8 rounded-full bg-[#F5C842]" />
+              <div className="h-1 w-8 rounded-full bg-[#F0D9B5]" />
+              <div className="h-1 w-8 rounded-full bg-[#F0D9B5]" />
+            </div>
+
+            <form onSubmit={handleVerify}>
+              <div className="mb-5">
+                <Label>Verification Code</Label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-3 py-2.5 text-center text-2xl tracking-[0.5em] border border-[#F0D9B5] rounded-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                />
+              </div>
+
+              <ErrorText>{error}</ErrorText>
+
+              <Button
+                type="submit" variant="primary"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2"
+              >
+                {loading ? (<><Spinner />Verifying...</>) : 'Verify & Create Account'}
+              </Button>
+            </form>
+
+            <p className="text-center text-xs text-navy opacity-50 mt-4">
+              Didn't get it?{' '}
+              {resendIn > 0 ? (
+                <span>Resend in {resendIn}s</span>
+              ) : (
+                <button onClick={handleResend} className="font-bold text-pinkDark underline">
+                  Resend code
+                </button>
+              )}
+            </p>
+            <p className="text-center text-xs text-navy opacity-50 mt-2">
+              Wrong email?{' '}
+              <button
+                onClick={() => { setStep('form'); setOtp(''); setError('') }}
+                className="font-bold text-pinkDark underline"
+              >
+                Go back
+              </button>
+            </p>
+          </Card>
+
         </div>
       </div>
     )
@@ -117,7 +253,7 @@ function Signup() {
             <div className="h-1 w-8 rounded-full bg-[#F0D9B5]" />
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSendCode}>
 
             {/* username */}
             <div className="mb-4">
@@ -179,10 +315,10 @@ function Signup() {
               {loading ? (
                 <>
                   <Spinner />
-                  Creating account...
+                  Sending Code...
                 </>
               ) : (
-                'Sign Up'
+                'Send Code'
               )}
             </Button>
           </form>
