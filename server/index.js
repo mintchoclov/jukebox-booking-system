@@ -11,7 +11,7 @@ const app = express()
 
 
 // disable telegram bot on local
-if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
+if (process.env.ENABLE_TELEGRAMBOT === 'true') {
   require('./telebot')
 }
 

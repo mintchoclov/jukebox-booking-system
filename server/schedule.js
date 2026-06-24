@@ -33,10 +33,7 @@ function autoReleaseExpiredBandConfirmations() {
   })
 }
 
-
-// Telegram notification jobs
-// Only enable these when Telegram bot is enabled.
-if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
+if (process.env.ENABLE_TELEGRAMBOT === 'true') {
   const notifications = require('./notifications')
 
   // Every Thursday 8am
@@ -67,10 +64,6 @@ if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
 cron.schedule('*/10 * * * *', () => { 
   autoReleaseExpiredBandConfirmations()
 })
-
-
-// run once when backend starts, useful for testing.
-// Set RUN_AUTO_RELEASE_ON_START=true in .env for one test.
 
 if (process.env.RUN_AUTO_RELEASE_ON_START === 'true') {
   autoReleaseExpiredBandConfirmations()

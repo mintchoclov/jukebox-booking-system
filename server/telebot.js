@@ -1,7 +1,18 @@
+
 const telegramBot = require('node-telegram-bot-api');
 const teleToken = process.env.TELEGRAMBOT_TOKEN;
 const telegramEnabled = process.env.ENABLE_TELEGRAMBOT === 'true';
-const bot = new telegramBot(teleToken, {polling: telegramEnabled});
+bot.getMe()
+  .then(me => console.log('Bot username:', me.username))
+  .catch(err => console.error('getMe failed:', err));
+
+bot.on('polling_error', err => {
+  console.error('POLLING ERROR:', err);
+});
+
+bot.on('error', err => {
+  console.error('BOT ERROR:', err);
+});
 
 if (telegramEnabled) {
   bot.onText(/\/start/, (msg) => {
@@ -9,6 +20,7 @@ if (telegramEnabled) {
 });
 
 bot.on('message', (msg) => {
+  if (msg.text === '/start') return; 
   const format = /^e\d{7}@u\.nus\.edu$/
 
   if (format.test(msg.text)) {
