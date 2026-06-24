@@ -64,10 +64,10 @@ if (process.env.ENABLE_TELEGRAM_BOT === 'true') {
 
 // band_slot Auto-release job
 
-cron.schedule('*/10 * * * *', () => { (remember to delete the /* between /* and 10)
+cron.schedule('*/10 * * * *', () => { 
   autoReleaseExpiredBandConfirmations()
 })
-*/
+
 
 // run once when backend starts, useful for testing.
 // Set RUN_AUTO_RELEASE_ON_START=true in .env for one test.
@@ -79,5 +79,3 @@ if (process.env.RUN_AUTO_RELEASE_ON_START === 'true') {
 module.exports = {
   autoReleaseExpiredBandConfirmations
 }
-
-
