@@ -1,5 +1,6 @@
 const express = require('express')
 const cors = require('cors')
+require('dns').setDefaultResultOrder('ipv4first')
 require('dotenv').config()
 // 接入routes in index.js
 const authRoutes = require('./routes/authRoutes')
