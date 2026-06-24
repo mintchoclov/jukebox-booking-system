@@ -224,6 +224,7 @@ function Bidding() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         band_id: user.band_id,
+        user_id: user.id,
         bids: bidsPayload
       })
     })
