@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "jest"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +22,6 @@
     "resend": "^6.14.0"
   },
   "devDependencies": {
-    "jest": "^30.4.2",
     "nodemon": "^3.1.14"
   }
 }
