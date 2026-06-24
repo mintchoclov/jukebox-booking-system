@@ -16,6 +16,9 @@ function Admin({ user }) {
   const [activeTab, setActiveTab] = useState('overview')
 
   const [bids, setBids] = useState([])
+  const [myBands, setMyBands] = useState([])
+  const [mySelfBookings, setMySelfBookings] = useState([])
+  const [myBandBookings, setMyBandBookings] = useState([])
   const [allocation, setAllocation] = useState([])
   const [confirmedBookings, setConfirmedBookings] = useState([])
   const [pendingUsers, setPendingUsers] = useState([])
@@ -67,6 +70,21 @@ function Admin({ user }) {
   useEffect(() => { fetchAll() }, [])
 
   function fetchAll() {
+    fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMyBands(Array.isArray(data) ? data : []))
+      .catch(() => { })
+
+    fetch(`${API_URL}/api/individual/view-my-bookings?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMySelfBookings(Array.isArray(data) ? data : []))
+      .catch(() => { })
+
+    fetch(`${API_URL}/api/band/my-bookings?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMyBandBookings(Array.isArray(data) ? data : []))
+      .catch(() => { })
+
     fetch(`${API_URL}/api/bids`)
       .then(res => res.json())
       .then(data => setBids(Array.isArray(data) ? data : []))
@@ -319,11 +337,12 @@ function Admin({ user }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ band_id: bandId, user_id: userId })
     })
-      .then(res => res.json().then(data => ({ ok: res.ok, data })))
-      .then(({ ok, data }) => {
-        if (!ok) setError(data.message || 'Failed to add user to band')
-        else { fetchBands(); refreshUsers() }
-      })
+      .then(() => fetch(`${API_URL}/api/admin/update-user-band`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json'},
+        body: JSON.stringify({user_id: userId, band_id:bandId})
+      }))
+      .then( () => { fetchBands(); refreshUsers() })
       .catch(() => setError('Failed to add user to band'))
   }
 
@@ -454,7 +473,15 @@ function Admin({ user }) {
               <h1 className="text-2xl font-medium text-navy">Admin Panel</h1>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="pink">{user?.username}</Badge>
+              <div className="flex flex-col items-end">
+                <Badge variant="pink">{user?.username}</Badge>
+                {myBands.map(band => (
+                  <span key={band.band_id} className="text-xs text-navy opacity-50 mt-0.5">
+                    {band.member_role === 'leader' ? 'Band leader of ' : 'Member of '}
+                    <span className="font-medium">{band.band_name}</span>
+                  </span>
+                ))}
+              </div>
               <button onClick={handleLogout} className="text-xs text-navy opacity-50">Logout</button>
             </div>
           </div>
@@ -1170,6 +1197,60 @@ function Admin({ user }) {
           {/* ===== MY BOOKING ===== */}
           {activeTab === 'my booking' && (
             <div>
+              {/* my self-practice bookings */}
+              <SectionLabel>My self-practice bookings</SectionLabel>
+              {mySelfBookings.filter(b => b.status === 'confirmed').length === 0 ? (
+                <p className="text-sm text-navy opacity-40 text-center py-4">No confirmed self bookings</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                  {mySelfBookings
+                    .filter(b => b.status === 'confirmed')
+                    .map(slot => (
+                      <Card key={slot.id} className={`p-4 ${slot.slot_category === 'extra' ? 'bg-pink' : 'bg-primarySoft'}`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-xs text-navy opacity-50">
+                              {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                                weekday: 'short', day: 'numeric', month: 'short'
+                              })}
+                            </p>
+                            <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                          </div>
+                          <Badge variant={slot.slot_category === 'extra' ? 'default' : 'primary'}>
+                            {slot.slot_category || 'primary'}
+                          </Badge>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              )}
+
+              <SectionLabel>My band's confirmed slots</SectionLabel>
+              {myBandBookings.filter(b => b.status === 'confirmed').length === 0 ? (
+                <p className="text-sm text-navy opacity-40 text-center py-4">No confirmed band slots</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                  {myBandBookings
+                    .filter(b => b.status === 'confirmed')
+                    .map(slot => (
+                      <Card key={slot.booking_id} className="p-4 bg-pink">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-xs text-navy opacity-50">
+                              {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                                weekday: 'short', day: 'numeric', month: 'short'
+                              })}
+                            </p>
+                            <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                            <p className="text-xs text-navy opacity-50 mt-0.5">{slot.band_name}</p>
+                          </div>
+                          <Badge variant="primary">Band ✓</Badge>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              )}
+
               <SectionLabel>Book a slot for yourself</SectionLabel>
               <Card className="p-6 text-center max-w-md">
                 <div className="text-4xl mb-4">🎵</div>
@@ -1234,6 +1315,31 @@ function Admin({ user }) {
                   <Badge variant="success">Open ↗</Badge>
                 </Card>
               </a>
+                {!user?.telegram_chat_id ? (
+                  <a
+                href="https://t.me/jukebox_booking_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block"
+                  >
+                <Card className="p-4 flex justify-between items-center hover:opacity-80 transition-opacity">
+                  <div>
+                    <p className="text-sm font-medium text-navy">Telegram bot</p>
+                    <p className="text-xs text-navy opacity-50 mt-1">Not linked — tap to connect</p>
+                  </div>
+                  <Badge variant="danger">Link ↗</Badge>
+                </Card>
+              </a>
+              ) : (
+              <Card className="p-4 flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium text-navy">Telegram bot</p>
+                  <p className="text-xs text-navy opacity-50 mt-1">Notifications linked ✓</p>
+                </div>
+                <Badge variant="success">Active</Badge>
+              </Card>
+                )}
+
               {error && <p className="text-dangerText text-xs mb-4">{error}</p>}
               <Button variant="secondary" className="px-8" onClick={handleLogout}>
                 Log Out

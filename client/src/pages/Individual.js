@@ -7,11 +7,17 @@ import { getBookingDateStr } from '../components/dateutils'
 
 function Individual({ user }) {
   const navigate = useNavigate()
+  const [myBands, setMyBands] = useState([])
   const [bookings, setBookings] = useState([])
   const [bandBookings, setBandBookings] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMyBands(Array.isArray(data) ? data : []))
+      .catch(() => { })
+
     fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
@@ -73,6 +79,12 @@ function Individual({ user }) {
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
           <h1 className="text-2xl font-medium text-navy">{user.username} 🎵</h1>
           <p className="text-xs text-navy opacity-40 mt-1">Ridge View RC · Individual</p>
+          {myBands.map(band => (
+            <p key={band.band_id} className="text-xs text-navy opacity-50 mt-0.5">
+              {band.member_role === 'leader' ? 'Band leader of ' : 'Member of '}
+              <span className="font-medium">{band.band_name}</span>
+            </p>
+          ))}
         </Card>
 
         {/* my bookings */}
@@ -163,9 +175,21 @@ function Individual({ user }) {
                 {user.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
               </p>
             </div>
+            <div className="flex items-center gap-2">
             <Badge variant={user.telegram_chat_id ? 'success' : 'danger'}>
               {user.telegram_chat_id ? 'Active' : 'Inactive'}
             </Badge>
+            {!user.telegram_chat_id && (
+              <a
+                href="https://t.me/jukebox_booking_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline"
+              >
+                Link ↗
+              </a>
+            )}
+            </div>
           </div>
         </Card>
 

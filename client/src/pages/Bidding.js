@@ -36,11 +36,10 @@ function getNextBiddingWeekMonday() {
 function Bidding() {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
-  const bandType = user.band_type || 'standard'
-  const bidPoints = getBidPoints(bandType)
-  const numChoices = bidPoints.length 
 
   const [bids, setBids] = useState([])
+  const [submittedBids, setSubmittedBids] = useState([])
+  const [myBand, setMyBand] = useState(null)
   const [blockedSlots, setBlockedSlots] = useState({})
   const [confirmedSlots, setConfirmedSlots] = useState({})
   const [loading, setLoading] = useState(true)
@@ -49,6 +48,9 @@ function Bidding() {
   const [error, setError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [biddingOpen, setBiddingOpen] = useState(false)
+  const bandType = myBand?.band_type || user.band_type || 'standard'
+  const bidPoints = getBidPoints(bandType)
+  const numChoices = bidPoints.length 
   const targetWeekMonday = getNextBiddingWeekMonday()
 
   const [myBids, setMyBids] = useState(
@@ -75,10 +77,33 @@ function Bidding() {
     fetch(`${API_URL}/api/bids`)
       .then(res => res.json())
       .then(data => {
-        setBids(Array.isArray(data) ? data : [])
+        const allBids = Array.isArray(data) ? data : []
+        setBids(allBids)
         setLoading(false)
+        const [y, m, d] = weekMonday.split('-').map(Number)
+        const weekDateStrs = Array.from({ length: 7 }, (_, i) =>
+          getDateStr(new Date(y, m - 1, d + i, 12, 0, 0))
+        )
+        const mine = allBids
+          .filter(b => Number(b.band_id) === Number(user.band_id))
+          .filter(b => weekDateStrs.includes(getBookingDateStr(b.slot_date)))
+          .map(b => ({
+            day: String(weekDateStrs.indexOf(getBookingDateStr(b.slot_date))),
+            time: String(TIME_SLOTS.findIndex(t => t.value === b.slot_time?.slice(0, 5)))
+          }))
+        setSubmittedBids(mine)
       })
       .catch(() => setLoading(false))
+
+    fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => {
+        const bands = Array.isArray(data) ? data : []
+        // find the band this user leads (or just their first band)
+        const led = bands.find(b => Number(b.leader_user_id) === Number(user.id))
+        setMyBand(led || bands[0] || null)
+      })
+      .catch(() => { })
 
     fetch(`${API_URL}/api/admin/bookings`)
       .then(res => res.json())
@@ -125,6 +150,10 @@ function Bidding() {
     return myBids.some(b => b.day === String(dayIdx) && b.time === String(timeIdx))
   }
 
+  function isSubmittedBid(dayIdx, timeIdx) {
+    return submittedBids.some(b => b.day === String(dayIdx) && b.time === String(timeIdx))
+  }
+
   function getMyBidRank(dayIdx, timeIdx) {
     return myBids.findIndex(b => b.day === String(dayIdx) && b.time === String(timeIdx))
   }
@@ -139,6 +168,10 @@ function Bidding() {
   }
 
   function handleGetSlotStyle(di, ti) {
+    const mine = isMyBid(di, ti)
+    if (!mine && isSubmittedBid(di, ti)) {
+      return 'bg-beige/50 border border-beige text-navy opacity-50 cursor-pointer'
+    }
     return getBiddingSlotStyle(
       getTotalPts(di, ti),
       !!blockedSlots[`${di}_${ti}`],
@@ -155,6 +188,7 @@ function Bidding() {
     if (isBlocked) return '✕'
     if (isConfirmed) return '✓'
     if (mine) return ['1st', '2nd', '3rd'][rank] || ''
+    if (isSubmittedBid(di, ti)) return 'old'
     if (totalPts > 0) return `${totalPts}pt`
     return ''
   }
@@ -231,8 +265,9 @@ function Bidding() {
       .then(res => res.json())
       .then(data => {
         setSubmitting(false)
-        if (data.error) {
-          setError(data.error)
+        console.log('REsponse from server:', data)
+        if (data.error || data.message) {
+          setError(data.error || data.message)
         } else {
           setSubmitted(true)
         }
@@ -297,6 +332,9 @@ function Bidding() {
         {/* header */}
         <Card className="p-6 text-center mb-6">
           <h1 className="text-2xl font-medium text-navy mb-1">Submit Band Bids 🎸</h1>
+          {myBand?.band_name && (
+            <p className="text-sm font-medium text-navy mb-1">{myBand.band_name}</p>
+          )}
           <p className="text-sm text-navy opacity-50">Rank your 3 preferred slots for next week</p>
           <div className="flex items-center justify-center gap-2 mt-2">
             <span className={`text-xs px-2 py-1 rounded-full ${

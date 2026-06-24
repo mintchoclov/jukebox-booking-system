@@ -1,10 +1,10 @@
-// telegram bot
 const telegramBot = require('node-telegram-bot-api');
-const teleToken = '8414367890:AAE2hxxlRv8aD3It6kPqOYAJgrIHaxQx27Q';
-const bot = new telegramBot(teleToken, {polling: true});
+const teleToken = process.env.TELEGRAMBOT_TOKEN;
+const telegramEnabled = process.env.ENABLE_TELEGRAMBOT === 'true';
+const bot = new telegramBot(teleToken, {polling: telegramEnabled});
 
-// start welcome message 
-bot.onText(/\/start/, (msg) => {
+if (telegramEnabled) {
+  bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, "Welcome to Jukebox Booking System's notification bot! Please reply with your NUS email to enable notifications!");
 });
 
@@ -25,12 +25,11 @@ bot.on('message', (msg) => {
       }
     )
   } else {
-    // email format is wrong
     bot.sendMessage(msg.chat.id, 'Invalid email format. Please use your NUS email (e.g. e1234567@u.nus.edu)')
   }
 })
+}
 
-// helper
 function sendMessage(chatId, message) {
   return bot.sendMessage(chatId, message, { parse_mode: 'HTML' })
 }
