@@ -29,6 +29,7 @@ function getNextBiddingWeekMonday() {
 
 function Leader({user}) {
   const navigate = useNavigate()
+  const [myBands, setMyBands] = useState([])
   const [bookings, setBookings] = useState([])
   const [bids, setBids] = useState([])
   const [biddingWeekStart, setBiddingWeekStart] = useState('')
@@ -37,6 +38,11 @@ function Leader({user}) {
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
+    fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => setMyBands(Array.isArray(data) ? data : []))
+      .catch(() => { })
+
     fetch(`${API_URL}/api/band/my-bookings?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
@@ -161,7 +167,14 @@ function Leader({user}) {
           <img src={Mascot} alt="JukeBox mascot" className="w-32 mx-auto mb-3" />
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
           <h1 className="text-2xl font-medium text-navy">{user.username} 🎸</h1>
-          <p className="text-xs text-navy opacity-40 mt-1">Band Leader</p>
+          {(() => {
+            const led = myBands.find(b => b.member_role === 'leader')
+              return (
+              < p className = "text-xs text-navy opacity-40 mt-1" > 
+              { led ? `Band Leader of ${led.band_name}` : 'Band Leader'}
+              </p>
+          )
+          })()}
         </Card>
 
         {/* pending band confirmation */}
@@ -281,9 +294,21 @@ function Leader({user}) {
                 {user.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
               </p>
             </div>
+            <div className="flex items-center gap-2">
             <Badge variant={user.telegram_chat_id ? 'success' : 'danger'}>
               {user.telegram_chat_id ? 'Active' : 'Inactive'}
             </Badge>
+            {!user.telegram_chat_id && (
+              <a
+                href="https://t.me/jukebox_booking_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline"
+              >
+                  Link ↗
+              </a>
+            )}
+            </div>
           </div>
         </Card>
 

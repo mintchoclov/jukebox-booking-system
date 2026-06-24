@@ -58,12 +58,24 @@ function normalizeSlotTime(slotTime) {
   ]
 
 // helper functions for rank calculation:
-function getBidValueFromRank(rank) {
-  if (Number(rank) === 1) return 3
-  if (Number(rank) === 2) return 2
-  if (Number(rank) === 3) return 1
+function getBidValueFromRank(rank, bandType) {
+  const r = Number(rank)
+  if (bandType === 'cbtr') {            // performance band: 4/3/2
+    if (r === 1) return 4
+    if (r === 2) return 3
+    if (r === 3) return 2
+  } else if (bandType === 'low_priority') {  // ad-hoc/senior: 2/1/0
+    if (r === 1) return 2
+    if (r === 2) return 1
+    if (r === 3) return 0
+  } else {                              // standard band: 3/2/1
+    if (r === 1) return 3
+    if (r === 2) return 2
+    if (r === 3) return 1
+  }
   return 0
 }
+
 
 // helper function checking whether the 3 submitted slots are of the same week
 // Format Date object as YYYY-MM-DD without timezone shifting
@@ -257,7 +269,7 @@ router.post('/weekly', (req, res) => {
 
   // 4: only the band leader can submit or edit weekly bids
   const leaderSql = `
-    SELECT id, name
+    SELECT id, name, band_type
     FROM bands
     WHERE id = ?
       AND leader_user_id = ?
@@ -333,12 +345,13 @@ router.post('/weekly', (req, res) => {
           `
 
           // Backend calculates bid_value based on preference_rank.
+          const bandType = leaderResults[0].band_type
           const values = bids.map((bid) => [
             band_id,
             bid.slot_date,
             normalizeSlotTime(bid.slot_time),
             bid.preference_rank,
-            getBidValueFromRank(bid.preference_rank)
+            getBidValueFromRank(bid.preference_rank, bandType)
           ])
 
           // helper function: insert new 3 bids
@@ -446,6 +459,7 @@ router.get('/', (req, res) => {
   const sql = `
     SELECT
       bids.id,
+      bids.band_id,
       bands.name AS band_name,
       bids.slot_date,
       bids.slot_time,
