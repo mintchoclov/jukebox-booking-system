@@ -208,23 +208,24 @@ function Individual({ user }) {
                 Link ↗
               </a>
             )}
-              < a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mb-4"
->
-              <Card className="p-5 flex justify-between items-center hover:opacity-80 transition-opacity">
-                <div>
-                  <p className="text-sm font-medium text-navy">Google Calendar</p>
-                  <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
-                </div>
-                <Badge variant="success">Open ↗</Badge>
-              </Card>
-            </a>
+              
             </div>
           </div>
         </Card>
-
+        
+        < a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mb-4"
+        >
+          <Card className="p-5 flex justify-between items-center hover:opacity-80 transition-opacity">
+            <div>
+              <p className="text-sm font-medium text-navy">Google Calendar</p>
+              <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
+            </div>
+            <Badge variant="success">Open ↗</Badge>
+          </Card>
+        </a>
         {/* action buttons */}
         <Button variant="primary" className="w-full mb-3" onClick={() => navigate('/calendar')}>
           Book a Slot
