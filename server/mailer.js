@@ -4,7 +4,7 @@ async function sendOtpEmail(to, otp) {
     const resend = new Resend(process.env.RESEND_API_KEY)
     
     const { data, error } = await resend.emails.send({
-        from: 'JukeBox <onboarding@resend.dev>',
+        from: 'JukeBox <noreply@jukeboxbooking.com>',
         to,
         subject: 'Your JukeBox verification code',
         html: `<p>Your JukeBox verification code is <b>${otp}</b>.</p>

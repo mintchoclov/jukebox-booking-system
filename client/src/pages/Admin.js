@@ -27,6 +27,7 @@ function Admin({ user }) {
   const [allBands, setAllBands] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [me, setMe] = useState(user)
   const [allocationRun, setAllocationRun] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [weekOffset, setWeekOffset] = useState(0)
@@ -67,7 +68,23 @@ function Admin({ user }) {
     return getDateStr(targetMonday)
   }
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => {
+    function refreshMe() {
+      fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.id) {
+            localStorage.setItem('user', JSON.stringify(data))
+            setMe(data)
+          }
+        })
+        .catch(() => { })
+    } 
+    refreshMe()
+    fetchAll() 
+    window.addEventListener('focus', refreshMe)
+    return () => window.removeEventListener('focus', refreshMe)
+}, [])
 
   function fetchAll() {
     fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
@@ -1315,7 +1332,7 @@ function Admin({ user }) {
                   <Badge variant="success">Open ↗</Badge>
                 </Card>
               </a>
-                {!user?.telegram_chat_id ? (
+                {!me?.telegram_chat_id ? (
                   <a
                 href="https://t.me/jukebox_booking_bot"
                 target="_blank"

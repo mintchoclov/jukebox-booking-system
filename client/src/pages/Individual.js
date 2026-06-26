@@ -10,9 +10,24 @@ function Individual({ user }) {
   const [myBands, setMyBands] = useState([])
   const [bookings, setBookings] = useState([])
   const [bandBookings, setBandBookings] = useState([])
+  const [me, setMe] = useState(user)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    function refreshMe() {
+      fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.id) {
+            localStorage.setItem('user', JSON.stringify(data))
+            setMe(data)
+          }
+        })
+        .catch(() => { })
+    }
+
+    refreshMe()
+
     fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
       .then(res => res.json())
       .then(data => setMyBands(Array.isArray(data) ? data : []))
@@ -39,6 +54,10 @@ function Individual({ user }) {
         .then(data => setBandBookings(Array.isArray(data) ? data : []))
         .catch(() => {})
     }
+
+    window.addEventListener('focus', refreshMe)
+    return () => window.removeEventListener('focus', refreshMe)
+
   }, [])
 
   function handleLogout() {
@@ -172,14 +191,14 @@ function Individual({ user }) {
             <div>
               <p className="text-sm font-medium text-navy">Telegram</p>
               <p className="text-xs text-navy opacity-50 mt-1">
-                {user.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
+                {me.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
               </p>
             </div>
             <div className="flex items-center gap-2">
-            <Badge variant={user.telegram_chat_id ? 'success' : 'danger'}>
-              {user.telegram_chat_id ? 'Active' : 'Inactive'}
+            <Badge variant={me.telegram_chat_id ? 'success' : 'danger'}>
+              {me.telegram_chat_id ? 'Active' : 'Inactive'}
             </Badge>
-            {!user.telegram_chat_id && (
+            {!me.telegram_chat_id && (
               <a
                 href="https://t.me/jukebox_booking_bot"
                 target="_blank"
@@ -189,6 +208,19 @@ function Individual({ user }) {
                 Link ↗
               </a>
             )}
+              < a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mb-4"
+>
+              <Card className="p-5 flex justify-between items-center hover:opacity-80 transition-opacity">
+                <div>
+                  <p className="text-sm font-medium text-navy">Google Calendar</p>
+                  <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
+                </div>
+                <Badge variant="success">Open ↗</Badge>
+              </Card>
+            </a>
             </div>
           </div>
         </Card>
