@@ -52,8 +52,8 @@ export function getBiddingSlotStyle(totalPts, isBlocked, isConfirmed, isMyBid) {
   if (isBlocked) base = biddingSlotStyles.blocked
   else if (isConfirmed) base = biddingSlotStyles.confirmed
   else if (totalPts === 0) base = biddingSlotStyles.available
-  else if (totalPts <= 4) base = biddingSlotStyles.low
-  else if (totalPts <= 8) base = biddingSlotStyles.med
+  else if (totalPts <= 2) base = biddingSlotStyles.low
+  else if (totalPts <= 4) base = biddingSlotStyles.med
   else base = biddingSlotStyles.high
   return isMyBid ? base + ' border-2 border-navy' : base
 }
