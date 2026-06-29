@@ -36,30 +36,30 @@ function autoReleaseExpiredBandConfirmations() {
 if (process.env.ENABLE_TELEGRAMBOT === 'true') {
   const notifications = require('./notifications')
 
-  // Every Thursday 8am
   cron.schedule('0 8 * * 4', () => {
     notifications.notifyBiddingOpen()
   })
 
-  // Every Wednesday 12pm
   cron.schedule('0 12 * * 3', () => {
     notifications.notifyBiddingDeadlineReminder()
   })
 
-  // Every Friday 12am
   cron.schedule('0 0 * * 5', () => {
     notifications.notifyBookingOpen()
   })
 
-  // Every minute
   cron.schedule('* * * * *', () => {
     notifications.notifySlotReminder()
+  })
+
+  cron.schedule('0 9 * * *', () => {
     notifications.notifyConfirmationReminder()
   })
+
+  cron.schedule('0 20 * * *', () => {
+    notifications.notifyDayBeforeReminder()
+  })
 }
-
-
-// band_slot Auto-release job
 
 cron.schedule('*/10 * * * *', () => { 
   autoReleaseExpiredBandConfirmations()

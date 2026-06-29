@@ -3,6 +3,7 @@ const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
+const notifications = require('../notifications')
 
 // helper function
 // fetch booking and check whether user is the band leader
@@ -251,7 +252,7 @@ router.post('/confirm-booking', (req, res) => {
             calendar_sync_status: 'failed'
           })
         }
-
+        notifications.notifySlotConfirmed(booking.band_id, booking.slot_date, booking.slot_time)
         return res.json({
           message: 'Band booking confirmed successfully.',
           booking_id,
@@ -343,7 +344,9 @@ router.post('/release-booking', (req, res) => {
           if (calendarErr) {
             console.error('Failed to delete Google Calendar event:', calendarErr)
           }
-
+          notifications.notifySlotReleased(booking.band_id, booking.slot_date, booking.slot_time)
+          notifications.notifyPoolSlotAvailable(booking.slot_date, booking.slot_time)
+          
           return res.json({
             message: 'Band booking released successfully! Slot is returned to pool.',
             booking_id,

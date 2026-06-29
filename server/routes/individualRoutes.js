@@ -3,6 +3,7 @@ const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
+const notifications = require('../notifications')
 
 // valid 2-hour slot times
 const validSlotTimes = [
@@ -342,6 +343,7 @@ router.post('/book', (req, res) => {
                                             calendar_sync_status: 'failed'
                                         })
                                     }
+                                    notifications.notifyIndividualBookingConfirmed(user_id, slot_date, slot_time, slot_category)
 
                                     return res.json({
                                         message: 'Self-practice booking confirmed successfully!',
@@ -404,8 +406,6 @@ router.post('/book', (req, res) => {
                             // Notify the original owner that their extra slot was displaced.
                             // Non-blocking: even if notification fails, booking should continue.
                             try {
-                                const notifications = require('../notifications')
-
                                 notifications.notifySlotDisplaced(
                                     existingBooking.user_id,
                                     slot_date,
@@ -454,7 +454,7 @@ router.post('/book', (req, res) => {
                                                     calendar_sync_status: 'failed'
                                                 })
                                             }
-
+                                            notifications.notifyIndividualBookingConfirmed(user_id, slot_date, slot_time, 'primary')
                                             return res.json({
                                                 message: 'Extra slot displaced successfully! Primary booking confirmed!',
                                                 displaced_booking_id: existingBooking.id,
@@ -755,7 +755,10 @@ router.post('/cancel-booking', (req, res) => {
                     if (calendarErr) {
                         console.error('Failed to delete Google Calendar event:', calendarErr)
                     }
-
+                    notifications.notifyBookingCancelled(user_id, booking.slot_date, booking.slot_time)
+                    if (!isLateCancellation) {
+                        notifications.notifyPoolSlotAvailable(booking.slot_date, booking.slot_time)
+                    }
                     return res.json({
                         message: isLateCancellation
                             ? 'Booking cancelled late and logged.'
@@ -775,7 +778,5 @@ router.post('/cancel-booking', (req, res) => {
         )
     })
 })
-
-module.exports = router
 
 module.exports = router

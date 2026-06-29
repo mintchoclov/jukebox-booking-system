@@ -1200,14 +1200,6 @@ router.post('/confirm-booking', (req, res) => {
               })
             }
 
-            // Optional notification
-            try {
-              const notifications = require('../notifications')
-              notifications.notifySlotConfirmed(band_id, slot_date, slot_time)
-            } catch (e) {
-              console.error('Notification error:', e)
-            }
-
             res.json({
               message: 'Band booking confirmed by admin. Waiting for band leader confirmation.',
               booking_id: result.insertId,
