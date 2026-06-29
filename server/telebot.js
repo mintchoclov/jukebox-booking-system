@@ -2,14 +2,23 @@
 const telegramBot = require('node-telegram-bot-api');
 const teleToken = process.env.TELEGRAMBOT_TOKEN;
 const telegramEnabled = process.env.ENABLE_TELEGRAMBOT === 'true';
-const bot = new telegramBot(teleToken, {polling: telegramEnabled});
+const bot = new telegramBot(teleToken);
+const baseUrl = 'https://jukebox-booking-system.onrender.com';
+
+if (telegramEnabled && baseUrl) {
+    bot.setWebHook(`${baseUrl}/bot${teleToken}`)
+        .then(() => console.log('Webhook set:', `${baseUrl}/bot${teleToken}`))
+        .catch(err => console.error('setWebHook failed:', err));
+} else {
+  console.log('Telegram webhook not set (disabled or no base URL).');
+}
 
 bot.getMe()
   .then(me => console.log('Bot username:', me.username))
   .catch(err => console.error('getMe failed:', err));
 
-bot.on('polling_error', err => {
-  console.error('POLLING ERROR:', err);
+bot.on('webhook_error', err => {
+  console.error('WEBHOOK ERROR:', err);
 });
 
 bot.on('error', err => {
@@ -48,7 +57,6 @@ function sendMessage(chatId, message) {
   return bot.sendMessage(chatId, message, { parse_mode: 'HTML' })
 }
 
-// band notifs
 function BiddingOpen(chatId, bandName) {
   sendMessage(chatId,
     `🎵 <b>Bidding is now open!</b>\n\nHi ${bandName}, submit your band's ranked slot preferences before <b>Thursday 12:00 PM</b>.`)
@@ -69,12 +77,21 @@ function ConfirmationReminder(chatId, bandName, slotDate, slotTime) {
     `⏰ <b>Confirmation Reminder!</b>\n\nHi ${bandName}, please confirm your slot for <b>${slotDate} ${slotTime}</b>.\n\n⚠️ If not confirmed, the slot will be <b>automatically released</b>!`)
 }
 
+function PoolSlotAvailable(chatId, username, slotDate, slotTime) {
+  sendMessage(chatId,
+    `🎵 <b>A Slot Just Opened Up!</b>\n\nHi ${username}, <b>${slotDate} ${slotTime}</b> is now available for self-practice. Open the app to grab it before someone else does! 👉`)
+}
+
 function SlotReleased(chatId, bandName, slotDate, slotTime) {
   sendMessage(chatId,
     `❌ <b>Slot Released</b>\n\nHi ${bandName}, unfortunately, your slot on <b>${slotDate} ${slotTime}</b> has been released back to the pool as it was not confirmed in time.`)
 }
 
-// indiv notifs
+function BandSlotConfirmedMember(chatId, username, bandName, slotDate, slotTime) {
+  sendMessage(chatId,
+    `✅ <b>Your Band Got a Slot!</b>\n\nHi ${username}, <b>${bandName}</b> has been allocated <b>${slotDate} ${slotTime}</b>. See you at practice! 🎸`)
+}
+
 function BookingOpen(chatId, username) {
   sendMessage(chatId,
     `🎵 <b>Self Practice Booking is Open!</b>\n\nHi ${username}, booking for next week's slots is now open!\n\n👉 Open the app to book your slot`)
@@ -88,6 +105,21 @@ function SlotDisplaced(chatId, username, slotDate, slotTime) {
 function SlotReminder(chatId, username, slotDate, slotTime) {
   sendMessage(chatId,
     `⏰ <b>Reminder!</b>\n\nHi ${username}, your session starts in <b>15 minutes</b>!\n📅 ${slotDate} ${slotTime}`)
+}
+
+function DayBeforeReminder(chatId, name, slotDate, slotTime) {
+  sendMessage(chatId,
+    `📅 <b>Practice Tomorrow!</b>\n\nHi ${name}, just a reminder that you have a session tomorrow at <b>${slotTime}</b> (${slotDate}). See you there! 🎶`)
+}
+
+function BookingCancelled(chatId, username, slotDate, slotTime) {
+  sendMessage(chatId,
+    `🗑️ <b>Booking Cancelled</b>\n\nHi ${username}, your booking on <b>${slotDate} ${slotTime}</b> has been cancelled and the slot returned to the pool.`)
+}
+
+function IndividualBookingConfirmed(chatId, username, slotDate, slotTime, slotCategory) {
+  sendMessage(chatId,
+    `✅ <b>Slot Booked!</b>\n\nHi ${username}, your <b>${slotCategory}</b> self-practice slot on <b>${slotDate} ${slotTime}</b> is confirmed. 🎵`)
 }
 
 function Dehumidifier(chatId, username) {
@@ -105,7 +137,6 @@ function AccountApproved(chatId, username) {
     `✅ <b>Account Approved!</b>\n\nHi ${username}, your JukeBox account has been approved!\n\nYou can now log in and start booking slots. 🎸`)
 }
 
-// admin notifs
 function AdminSlotReleased(chatId, slotDate, slotTime, bandName) {
   sendMessage(chatId,
     `🔔 <b>Slot Released</b>\n\nThe slot on <b>${slotDate} ${slotTime}</b> held by <b>${bandName}</b> has been released back to the pool.`)
@@ -122,6 +153,7 @@ function AdminNewUserPending(chatId, username, email) {
 }
 
 module.exports = {
+  bot,
   sendMessage,
   BiddingOpen,
   BiddingDeadlineReminder,
@@ -136,5 +168,10 @@ module.exports = {
   AdminSlotReleased,
   AdminDehumidifierMissing,
   AdminNewUserPending,
-  AccountApproved
+  AccountApproved,
+  BandSlotConfirmedMember,
+  PoolSlotAvailable,
+  IndividualBookingConfirmed,
+  DayBeforeReminder,
+  BookingCancelled
 }

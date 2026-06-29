@@ -10,26 +10,23 @@ const individualRoutes = require('./routes/individualRoutes')
 const bandRoutes = require('./routes/bandRoutes')
 const app = express()
 
+app.use(express.json());
+const teleToken = process.env.TELEGRAMBOT_TOKEN;
+const { bot }  = require('./telebot');
 
-// disable telegram bot on local
-if (process.env.ENABLE_TELEGRAMBOT === 'true') {
-  require('./telebot')
-}
+app.post(`/bot${teleToken}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
 
 if (process.env.ENABLE_SCHEDULE_JOBS === 'true') {
   require('./schedule')
 }
-// telegram bot and schedule
-//require('./telebot')
-//require('./schedule')
 
 app.use(cors({
   origin: true,
   credentials: true
 }))
-
-
-app.use(express.json())
 
 app.use('/api/auth', authRoutes)
 app.use('/api/bids', bidRoutes)
