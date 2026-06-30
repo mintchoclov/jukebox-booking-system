@@ -14,6 +14,7 @@ function Signup() {
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [resendIn, setResendIn] = useState(0)
 
@@ -34,7 +35,7 @@ function Signup() {
   function handleSendCode(e) {
     e.preventDefault()
 
-    if (!username || !emailPrefix || !password) {
+    if (!username || !emailPrefix || !password || !confirmPassword) {
       setError('Please fill in all fields')
       triggerShake()
       return
@@ -49,6 +50,12 @@ function Signup() {
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters')
+      triggerShake()
+      return
+    }
+
+     if (password !== confirmPassword) {
+      setError('Passwords do not match')
       triggerShake()
       return
     }
@@ -304,6 +311,24 @@ function Signup() {
                 </button>
               </div>
             </div>
+
+            <div className="mb-5">
+              <Label>Confirm Password</Label>
+              <div className="flex w-full">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-1/2 flex-1 min-w-0 px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
+                />
+              </div>
+            </div>
+            
+            {confirmPassword && password !== confirmPassword && (
+              <p className="text-xs text-pinkDark mt-1">Passwords do not match</p>
+            )}
+
 
             <ErrorText>{error}</ErrorText>
 
