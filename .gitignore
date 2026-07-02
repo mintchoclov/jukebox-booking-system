@@ -1,7 +1,3 @@
-# test 
-server/__tests__/
-client/src/components/dateutils.test.js
-
 
 # Logs
 logs
