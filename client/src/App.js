@@ -8,6 +8,7 @@ import Admin from './pages/Admin'
 import Individual from './pages/Individual'
 import Leader from './pages/Leader'
 import Calendar from './pages/Calendar'
+import ResetPassword from './pages/ResetPassword'
 
 import Blobs from './components/Blobs'
 
@@ -115,6 +116,7 @@ function App() {
         <Route path = "/individual" element = {<Individual />} />
         <Route path = "/leader" element = {<Leader />} />
         <Route path = "/calendar" element = {<Calendar />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </div>
     </BrowserRouter>

@@ -1,3 +1,4 @@
+
 /*
 const { Resend } = require('resend')
 
@@ -54,7 +55,7 @@ async function sendOtpEmail(to, otp) {
     to,
     subject: 'Your JukeBox verification code',
     html: `
-      <p>Your JUkeBox verification code is <b>${otp}</b>.</p>
+      <p>Your JukeBox verification code is <b>${otp}</b>.</p>
       <p>It expires in 10 minutes. If this wasn't you, ignore this email.</p>
     `
   })

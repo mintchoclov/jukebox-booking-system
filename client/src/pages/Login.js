@@ -228,6 +228,12 @@ function Login() {
             Don't have an account?{' '}
             <Link to="/signup" className="font-bold text-pinkDark underline">Sign up here.</Link>
           </p>
+
+          <p className="text-center text-xs text-navy opacity-50 mt-2">
+            Forgot your password?{' '}
+            <Link to="/reset-password" className="font-bold text-pinkDark underline">Reset it here.</Link>
+          </p>
+          
         </Card>
 
       </div>
