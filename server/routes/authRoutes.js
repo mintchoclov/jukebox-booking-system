@@ -72,7 +72,6 @@ router.post('/register', (req, res) => {
 */
 
 // POST /api/auth/login
-// POST /api/auth/login
 router.post('/login', (req, res) => {
   const email = (req.body.email || '').trim().toLowerCase()
   const { password } = req.body
@@ -323,5 +322,195 @@ router.post('/verify-otp', (req, res) => {
     }
   )
 })
+
+// POST /api/auth/request-reset-otp
+router.post('/request-reset-otp', (req, res) => {
+  const email = (req.body.email || '').trim().toLowerCase()
+
+  if (!nusEmailRegex.test(email)) {
+    return res.status(400).json({
+      error: 'Invalid NUS email format. Please use e1234567@u.nus.edu'
+    })
+  }
+
+  // Check whether account exists
+  db.query(
+    'SELECT id, username FROM users WHERE email = ? LIMIT 1',
+    [email],
+    (err, users) => {
+      if (err) return res.status(500).json({ error: err.message })
+
+      // Security-friendly response: do not reveal whether email exists
+      if (users.length === 0) {
+        return res.json({
+          message: 'If this email is registered, a reset code has been sent.'
+        })
+      }
+
+      // 60-second resend cooldown
+      db.query(
+        'SELECT created_at FROM password_reset_otps WHERE email = ?',
+        [email],
+        (err2, prev) => {
+          if (err2) return res.status(500).json({ error: err2.message })
+
+          if (
+            prev.length &&
+            Date.now() - new Date(prev[0].created_at).getTime() < 60000
+          ) {
+            return res.status(429).json({
+              error: 'Please wait a moment before requesting another code.'
+            })
+          }
+
+          const otp = crypto.randomInt(100000, 1000000).toString()
+          const otpHash = hashOtp(otp)
+          const expiresAt = new Date(Date.now() + OTP_TTL_MIN * 60000)
+
+          const upsert = `
+            INSERT INTO password_reset_otps
+              (email, otp_hash, expires_at, attempts, created_at)
+            VALUES (?, ?, ?, 0, NOW())
+            ON DUPLICATE KEY UPDATE
+              otp_hash = VALUES(otp_hash),
+              expires_at = VALUES(expires_at),
+              attempts = 0,
+              created_at = NOW()
+          `
+
+          db.query(upsert, [email, otpHash, expiresAt], (err3) => {
+            if (err3) return res.status(500).json({ error: err3.message })
+
+            sendOtpEmail(email, otp)
+              .then(() => {
+                res.json({
+                  message: 'Password reset code sent to your NUS email.'
+                })
+              })
+              .catch((e) => {
+                console.error('Reset email error:', e)
+                res.status(500).json({
+                  error: 'Failed to send reset email. Try again.'
+                })
+              })
+          })
+        }
+      )
+    }
+  )
+})
+
+// POST /api/auth/reset-password
+router.post('/reset-password', (req, res) => {
+  const email = (req.body.email || '').trim().toLowerCase()
+  const otp = (req.body.otp || '').trim()
+  const { newPassword } = req.body
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({
+      error: 'email, otp, and newPassword are required'
+    })
+  }
+
+  if (!nusEmailRegex.test(email)) {
+    return res.status(400).json({
+      error: 'Invalid NUS email format.'
+    })
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      error: 'New password must be at least 6 characters long.'
+    })
+  }
+
+  db.query(
+    'SELECT otp_hash, expires_at, attempts FROM password_reset_otps WHERE email = ?',
+    [email],
+    async (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message })
+
+      if (rows.length === 0) {
+        return res.status(400).json({
+          error: 'No reset request found. Please request a new code.'
+        })
+      }
+
+      const rec = rows[0]
+
+      if (new Date(rec.expires_at) < new Date()) {
+        db.query(
+          'DELETE FROM password_reset_otps WHERE email = ?',
+          [email],
+          () => {}
+        )
+
+        return res.status(400).json({
+          error: 'Reset code expired. Please request a new one.'
+        })
+      }
+
+      if (rec.attempts >= MAX_ATTEMPTS) {
+        db.query(
+          'DELETE FROM password_reset_otps WHERE email = ?',
+          [email],
+          () => {}
+        )
+
+        return res.status(429).json({
+          error: 'Too many attempts. Please request a new code.'
+        })
+      }
+
+      if (hashOtp(otp) !== rec.otp_hash) {
+        db.query(
+          'UPDATE password_reset_otps SET attempts = attempts + 1 WHERE email = ?',
+          [email],
+          () => {}
+        )
+
+        return res.status(400).json({
+          error: 'Incorrect reset code.'
+        })
+      }
+
+      let hashedPassword
+
+      try {
+        hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS)
+      } catch (e) {
+        console.error('Password reset hashing error:', e)
+        return res.status(500).json({
+          error: 'Failed to secure new password.'
+        })
+      }
+
+      db.query(
+        'UPDATE users SET password = ? WHERE email = ?',
+        [hashedPassword, email],
+        (err2, result) => {
+          if (err2) return res.status(500).json({ error: err2.message })
+
+          if (result.affectedRows === 0) {
+            return res.status(404).json({
+              error: 'User account not found.'
+            })
+          }
+
+          db.query(
+            'DELETE FROM password_reset_otps WHERE email = ?',
+            [email],
+            () => {}
+          )
+
+          res.json({
+            message: 'Password reset successfully! You can now log in with your new password.'
+          })
+        }
+      )
+    }
+  )
+})
+
 
 module.exports = router
