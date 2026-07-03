@@ -89,3 +89,12 @@ CREATE TABLE IF NOT EXISTS band_members (
 
     UNIQUE KEY unique_band_user (band_id, user_id)
     );
+
+-- reset password feature need to use
+CREATE TABLE IF NOT EXISTS password_reset_otps (
+    email VARCHAR(255) PRIMARY KEY,
+    otp_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    attempts INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
