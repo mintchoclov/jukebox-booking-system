@@ -325,6 +325,7 @@ router.post('/verify-otp', (req, res) => {
 
 // POST /api/auth/request-reset-otp
 router.post('/request-reset-otp', (req, res) => {
+  console.log('request-reset-otp hit', req.body)
   const email = (req.body.email || '').trim().toLowerCase()
 
   if (!nusEmailRegex.test(email)) {
