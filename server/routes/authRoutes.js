@@ -1,18 +1,25 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const bcrypt = require('bcryptjs')
+
 
 const crypto = require('crypto')
 const { sendOtpEmail } = require('../mailer')
 
 const OTP_TTL_MIN = 10
 const MAX_ATTEMPTS = 5
+const BCRYPT_ROUNDS = 12
 const nusEmailRegex = /^e\d{7}@u\.nus\.edu$/
 
 function hashOtp(otp) {
   return crypto.createHash('sha256').update(otp).digest('hex')
 }
 
+// password hash helper function
+function isBcryptHash(value) {
+  return typeof value === 'string' && value.startsWith('$2')
+}
 /*
 // POST /api/auth/register
 router.post('/register', (req, res) => {
@@ -65,8 +72,10 @@ router.post('/register', (req, res) => {
 */
 
 // POST /api/auth/login
+// POST /api/auth/login
 router.post('/login', (req, res) => {
-  const { email, password } = req.body
+  const email = (req.body.email || '').trim().toLowerCase()
+  const { password } = req.body
 
   if (!email || !password) {
     return res.status(400).json({
@@ -79,16 +88,18 @@ router.post('/login', (req, res) => {
       id,
       username,
       email,
+      password,
       role,
       status,
       is_mr_certified,
       telegram_chat_id,
       band_id
     FROM users
-    WHERE email = ? AND password = ?
+    WHERE email = ?
+    LIMIT 1
   `
 
-  db.query(sql, [email, password], (err, results) => {
+  db.query(sql, [email], async (err, results) => {
     if (err) {
       console.error(err)
       return res.status(500).json({ error: err.message })
@@ -99,6 +110,41 @@ router.post('/login', (req, res) => {
     }
 
     const user = results[0]
+    const storedPassword = user.password || ''
+
+    let passwordMatches = false
+
+    // ensure MS2 user trying login will not fail, auto upgrade to hashed password after log in
+    try {
+      if (isBcryptHash(storedPassword)) {
+        // new secure accounts: compare input password with bcrypt hash
+        passwordMatches = await bcrypt.compare(password, storedPassword)
+      } else {
+        // backward compatibility for old accounts that still have plaintext password
+        passwordMatches = password === storedPassword
+
+        // If old plaintext login succeeds, immediately upgrade it to bcrypt hash
+        if (passwordMatches) {
+          const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS)
+          db.query(
+            'UPDATE users SET password = ? WHERE id = ?',
+            [hashedPassword, user.id],
+            (updateErr) => {
+              if (updateErr) {
+                console.error('Failed to upgrade plaintext password:', updateErr)
+              }
+            }
+          )
+        }
+      }
+    } catch (e) {
+      console.error('Password check error:', e)
+      return res.status(500).json({ error: 'Failed to verify password' })
+    }
+
+    if (!passwordMatches) {
+      return res.status(401).json({ error: 'Invalid credentials' })
+    }
 
     if (user.status === 'pending') {
       return res.status(403).json({ error: 'pending' })
@@ -122,10 +168,12 @@ router.post('/login', (req, res) => {
       })
     }
 
+    // Never send password back to frontend
+    delete user.password
+
     res.json(user)
   })
 })
-
 
 // POST /api/auth/bump-admin
 // user bumps admin to approve their account
@@ -149,7 +197,6 @@ router.post('/bump-admin', (req, res) => {
   })
 })
 
-module.exports = router
 
 // POST /api/auth/request-otp
 router.post('/request-otp', (req, res) => {
@@ -216,7 +263,7 @@ router.post('/verify-otp', (req, res) => {
   db.query(
     'SELECT otp_hash, expires_at, attempts FROM email_otps WHERE email = ?',
     [email],
-    (err, rows) => {
+    async(err, rows) => {
       if (err) return res.status(500).json({ error: err.message })
       if (rows.length === 0) {
         return res.status(400).json({ error: 'No verification in progress. Request a new code.' })
@@ -237,11 +284,20 @@ router.post('/verify-otp', (req, res) => {
         return res.status(400).json({ error: 'Incorrect code.' })
       }
 
+
+      let hashedPassword
+      try {
+        hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS)
+      } catch (e) {
+        console.error('Password hashing error:', e)
+        return res.status(500).json({ error: 'Failed to secure password' })
+      }
+
       const sql = `
         INSERT INTO users (username, email, password, role, status, is_mr_certified)
         VALUES (?, ?, ?, 'individual', 'pending', FALSE)
       `
-      db.query(sql, [username, email, password], (err2, result) => {
+      db.query(sql, [username, email, hashedPassword], (err2, result) => {
         if (err2) {
           if (err2.errno === 1062 || err2.code === 'ER_DUP_ENTRY') {
             return res.status(400).json({ error: 'Email already registered' })
@@ -267,3 +323,5 @@ router.post('/verify-otp', (req, res) => {
     }
   )
 })
+
+module.exports = router

@@ -5,28 +5,17 @@
 CREATE DATABASE IF NOT EXISTS jukebox;
 USE jukebox;
 
-/*
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255),
-    email VARCHAR(255),
-    password VARCHAR(255),
-    role ENUM('admin', 'band', 'individual')
-    );
- */
-
 -- MS2 new user table
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255),
-    email VARCHAR(255),
-    password VARCHAR(255),
+    email VARCHAR(255) UNIQUE,
+    password VARCHAR(255) NOT NULL,
     role ENUM('admin', 'band', 'individual') DEFAULT 'individual',
     status ENUM('pending', 'approved', 'rejected', 'suspended') DEFAULT 'pending',
     is_mr_certified BOOLEAN DEFAULT FALSE,
     band_id INT NULL
     );
-
 CREATE TABLE IF NOT EXISTS bands (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
