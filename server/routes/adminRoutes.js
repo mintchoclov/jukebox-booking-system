@@ -1239,6 +1239,7 @@ router.get('/bookings', (req, res) => {
         bookings.allocation_score,
         bookings.status,
         bookings.reject_reason,
+        bookings.notes,
         bookings.created_at
       FROM bookings
       LEFT JOIN bands ON bookings.band_id = bands.id

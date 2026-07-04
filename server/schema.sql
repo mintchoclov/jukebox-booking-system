@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     status ENUM('pending', 'confirmed', 'rejected', 'cancelled', 'late_cancelled', 'displaced') DEFAULT 'pending',
     reject_reason VARCHAR(255),
     cancel_reason VARCHAR(255),
+    notes TEXT NULL,
     cancelled_at TIMESTAMP NULL,
     is_late_cancellation BOOLEAN DEFAULT FALSE,
     calendar_event_id VARCHAR(255),

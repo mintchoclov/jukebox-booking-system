@@ -137,8 +137,6 @@ function isSelfPracticeWindowOpen(slotDate) {
 
 
 
-
-
 // No.1
 //POST /api/individual/book
 router.post('/book', (req, res) => {
@@ -149,6 +147,14 @@ router.post('/book', (req, res) => {
     } = req.body
 
     const slot_time = normalizeSlotTime(req.body.slot_time)
+    const notes = req.body.notes ? String(req.body.notes).trim() : null
+
+    // prevent individual from submitting long notes
+    if (notes && notes.length > 500) {
+        return res.status(400).json({
+            message: 'Notes cannot exceed 500 characters.'
+        })
+    }
 
     if (!user_id || !slot_date || !req.body.slot_time || !slot_category) {
         return res.status(400).json({
@@ -192,7 +198,7 @@ router.post('/book', (req, res) => {
         })
     }
 
-    // Common insert SQL for confirmed individual booking
+    // Common insert SQL for confirmed individual booking, MS3 added the note taking
     const insertSql = `
         INSERT INTO bookings
         (
@@ -202,11 +208,11 @@ router.post('/book', (req, res) => {
             slot_category,
             slot_date,
             slot_time,
-            status
+            status,
+            notes
         )
-        VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
+        VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed', ?)
     `
-
     // Step 1: Check user
     const userSql = `
         SELECT
@@ -321,7 +327,8 @@ router.post('/book', (req, res) => {
                                 user_id,
                                 slot_category,
                                 slot_date,
-                                slot_time
+                                slot_time,
+                                notes
                             ],
                             (insertErr, result) => {
                                 if (insertErr) {
@@ -350,6 +357,7 @@ router.post('/book', (req, res) => {
                                         booking_id: result.insertId,
                                         status: 'confirmed',
                                         slot_time,
+                                        notes,
                                         calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
                                         google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
                                         google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
@@ -428,7 +436,8 @@ router.post('/book', (req, res) => {
                                         user_id,
                                         'primary',
                                         slot_date,
-                                        slot_time
+                                        slot_time,
+                                        notes
                                     ],
                                     (insertErr, result) => {
                                         if (insertErr) {
@@ -450,6 +459,7 @@ router.post('/book', (req, res) => {
                                                     status: 'confirmed',
                                                     slot_category: 'primary',
                                                     slot_time,
+                                                    notes,
                                                     displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
                                                     calendar_sync_status: 'failed'
                                                 })
@@ -462,6 +472,7 @@ router.post('/book', (req, res) => {
                                                 status: 'confirmed',
                                                 slot_category: 'primary',
                                                 slot_time,
+                                                notes,
                                                 displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
                                                 calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
                                                 google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
@@ -489,10 +500,6 @@ router.post('/book', (req, res) => {
 
 
 
-
-
-
-
 // No.2
 //GET  /api/individual/view-my-bookings
 // individual user views their own self-practice bookings
@@ -515,6 +522,7 @@ router.get('/view-my-bookings', (req, res) => {
             slot_date,
             slot_time,
             status,
+            notes,
             cancel_reason,
             cancelled_at,
             is_late_cancellation,
