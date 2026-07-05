@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS bands (
     leader_user_id INT,
     band_type ENUM('standard', 'cbtr', 'low_priority')
     DEFAULT 'standard',
+    band_name_change_count INT DEFAULT 0,
+    last_band_name_changed_at TIMESTAMP NULL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 

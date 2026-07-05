@@ -122,6 +122,22 @@ function toMysqlDate(dateObj) {
     return formatLocalDate(dateObj)
 }
 
+// help to return SGT
+function formatSgtDateTime(dateValue) {
+    const date = new Date(dateValue)
+
+    // Singapore is UTC+8, now only showing UTC
+    const sgtDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+
+    const year = sgtDate.getUTCFullYear()
+    const month = String(sgtDate.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(sgtDate.getUTCDate()).padStart(2, '0')
+    const hour = String(sgtDate.getUTCHours()).padStart(2, '0')
+    const minute = String(sgtDate.getUTCMinutes()).padStart(2, '0')
+    const second = String(sgtDate.getUTCSeconds()).padStart(2, '0')
+
+    return `${year}-${month}-${day} ${hour}:${minute}:${second} SGT`
+}
 // helper: used for individual edit username, has 14days cool down rule
 function cleanEditableName(value) {
     return String(value || '').trim()
@@ -884,11 +900,13 @@ router.post('/edit-username', (req, res) => {
             const now = new Date()
 
             if (now < nextAllowedAt) {
-                return res.status(400).json({
-                    message: 'You can only change your username once every 14 days after your first change.',
-                    last_username_changed_at: lastChangedAt,
-                    next_allowed_at: nextAllowedAt
-                })
+               return res.status(400).json({
+                   message: 'You can only change your username once every 14 days after your first change.',
+                   last_username_changed_at: lastChangedAt,
+                   next_allowed_at: nextAllowedAt,
+                   last_username_changed_at_sgt: formatSgtDateTime(lastChangedAt),
+                   next_allowed_at_sgt: formatSgtDateTime(nextAllowedAt)
+               })
             }
         }
 

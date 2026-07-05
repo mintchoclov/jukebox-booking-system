@@ -39,6 +39,31 @@ function getLeaderBooking(userId, bookingId, callback) {
   })
 }
 
+function cleanEditableName(value) {
+  return String(value || '').trim()
+}
+
+function addDays(dateValue, days) {
+  const date = new Date(dateValue)
+  date.setDate(date.getDate() + days)
+  return date
+}
+
+function formatSgtDateTime(dateValue) {
+  const date = new Date(dateValue)
+  const sgtDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+
+  const year = sgtDate.getUTCFullYear()
+  const month = String(sgtDate.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(sgtDate.getUTCDate()).padStart(2, '0')
+  const hour = String(sgtDate.getUTCHours()).padStart(2, '0')
+  const minute = String(sgtDate.getUTCMinutes()).padStart(2, '0')
+  const second = String(sgtDate.getUTCSeconds()).padStart(2, '0')
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} SGT`
+}
+
+
 
 
 // GET /api/band/my-bands?user_id=1
@@ -61,7 +86,9 @@ router.get('/my-bands', (req, res) => {
       bands.leader_user_id,
       leader.username AS leader_username,
       band_members.member_role,
-      bands.is_active
+      bands.is_active,
+      bands.band_name_change_count,
+      bands.last_band_name_changed_at
     FROM band_members
     JOIN bands
       ON band_members.band_id = bands.id
@@ -81,6 +108,154 @@ router.get('/my-bands', (req, res) => {
     }
 
     res.json(bands)
+  })
+})
+
+
+// POST /api/band/edit-band-name
+// Band leader can change their own band name freely once.
+// After the first self-change, future changes require waiting 14 days.
+// Admin band-name edits are handled separately in adminRoutes and are not restricted.
+router.post('/edit-band-name', (req, res) => {
+  const {
+    user_id,
+    band_id,
+    name
+  } = req.body || {}
+
+  const newBandName = cleanEditableName(name)
+
+  if (!user_id || !band_id || !newBandName) {
+    return res.status(400).json({
+      message: 'user_id, band_id, and name are required.'
+    })
+  }
+
+  if (newBandName.length > 255) {
+    return res.status(400).json({
+      message: 'Band name cannot exceed 255 characters.'
+    })
+  }
+
+  const sql = `
+    SELECT
+      users.id AS user_id,
+      users.status AS user_status,
+      users.role AS user_role,
+
+      bands.id AS band_id,
+      bands.name AS band_name,
+      bands.leader_user_id,
+      bands.is_active,
+      bands.band_name_change_count,
+      bands.last_band_name_changed_at,
+
+      band_members.member_role
+    FROM users
+    JOIN bands
+      ON bands.id = ?
+    LEFT JOIN band_members
+      ON band_members.band_id = bands.id
+      AND band_members.user_id = users.id
+    WHERE users.id = ?
+  `
+
+  db.query(sql, [band_id, user_id], (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to check band leader permission.'
+      })
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: 'User or band not found.'
+      })
+    }
+
+    const row = results[0]
+
+    if (row.user_status !== 'approved') {
+      return res.status(403).json({
+        message: 'Only approved users can edit band names.'
+      })
+    }
+
+    if (!row.is_active) {
+      return res.status(400).json({
+        message: 'Cannot edit the name of an inactive band.'
+      })
+    }
+
+    const isLeaderByBandTable = Number(row.leader_user_id) === Number(user_id)
+    const isLeaderByMemberTable = row.member_role === 'leader'
+
+    if (!isLeaderByBandTable && !isLeaderByMemberTable) {
+      return res.status(403).json({
+        message: 'Only the band leader can edit this band name.'
+      })
+    }
+
+    if (row.band_name === newBandName) {
+      return res.json({
+        message: 'Band name is already set to this value.',
+        band_id,
+        band_name: row.band_name,
+        band_name_change_count: row.band_name_change_count || 0,
+        last_band_name_changed_at: row.last_band_name_changed_at,
+        last_band_name_changed_at_sgt: row.last_band_name_changed_at
+          ? formatSgtDateTime(row.last_band_name_changed_at)
+          : null
+      })
+    }
+
+    const changeCount = row.band_name_change_count || 0
+    const lastChangedAt = row.last_band_name_changed_at
+
+    if (changeCount >= 1 && lastChangedAt) {
+      const nextAllowedAt = addDays(lastChangedAt, 14)
+      const now = new Date()
+
+      if (now < nextAllowedAt) {
+        return res.status(400).json({
+          message: 'Band name can only be changed once every 14 days after the first change.',
+          last_band_name_changed_at: lastChangedAt,
+          next_allowed_at: nextAllowedAt,
+          last_band_name_changed_at_sgt: formatSgtDateTime(lastChangedAt),
+          next_allowed_at_sgt: formatSgtDateTime(nextAllowedAt)
+        })
+      }
+    }
+
+    const updateSql = `
+      UPDATE bands
+      SET
+        name = ?,
+        band_name_change_count = COALESCE(band_name_change_count, 0) + 1,
+        last_band_name_changed_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `
+
+    db.query(updateSql, [newBandName, band_id], (updateErr) => {
+      if (updateErr) {
+        console.error(updateErr)
+        return res.status(500).json({
+          message: 'Failed to update band name.'
+        })
+      }
+
+      return res.json({
+        message: changeCount === 0
+          ? 'Band name updated successfully. This was the free band name change.'
+          : 'Band name updated successfully.',
+        band_id,
+        old_name: row.band_name,
+        new_name: newBandName,
+        band_name_change_count: changeCount + 1,
+        last_band_name_changed_at_sgt: formatSgtDateTime(new Date())
+      })
+    })
   })
 })
 
