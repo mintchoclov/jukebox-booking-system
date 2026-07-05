@@ -135,7 +135,41 @@ function getBandConfirmationDeadline(slotDate, slotTime) {
   return deadline
 }
 
+// helper: for admin to change the user's username
+function checkApprovedAdmin(adminUserId, callback) {
+  if (!adminUserId) {
+    return callback(null, false, 400, 'admin_user_id is required.')
+  }
 
+  const adminSql = `
+    SELECT id, role, status
+    FROM users
+    WHERE id = ?
+  `
+
+  db.query(adminSql, [adminUserId], (err, results) => {
+    if (err) {
+      console.error(err)
+      return callback(err)
+    }
+
+    if (results.length === 0) {
+      return callback(null, false, 404, 'Admin user not found.')
+    }
+
+    const admin = results[0]
+
+    if (admin.role !== 'admin' || admin.status !== 'approved') {
+      return callback(null, false, 403, 'Only approved admin users can perform this action.')
+    }
+
+    return callback(null, true)
+  })
+}
+
+function cleanEditableName(value) {
+  return String(value || '').trim()
+}
 
 
 
@@ -797,6 +831,104 @@ router.post('/edit-band-type', (req, res) => {
 })
 
 
+// POST /api/admin/edit-band-name
+// admin can edit  band name at any time if the name was keyed wrongly
+router.post('/edit-band-name', (req, res) => {
+  const {
+    admin_user_id,
+    band_id,
+    name
+  } = req.body || {}
+
+  const newName = cleanEditableName(name)
+
+  if (!band_id || !newName) {
+    return res.status(400).json({
+      message: 'band_id and name are required.'
+    })
+  }
+
+  if (newName.length > 255) {
+    return res.status(400).json({
+      message: 'Band name cannot exceed 255 characters.'
+    })
+  }
+
+  checkApprovedAdmin(admin_user_id, (adminErr, ok, statusCode, message) => {
+    if (adminErr) {
+      return res.status(500).json({
+        message: 'Failed to check admin permission.'
+      })
+    }
+
+    if (!ok) {
+      return res.status(statusCode).json({ message })
+    }
+
+    const findBandSql = `
+      SELECT id, name, is_active
+      FROM bands
+      WHERE id = ?
+    `
+
+    db.query(findBandSql, [band_id], (findErr, bandResults) => {
+      if (findErr) {
+        console.error(findErr)
+        return res.status(500).json({
+          message: 'Failed to find band.'
+        })
+      }
+
+      if (bandResults.length === 0) {
+        return res.status(404).json({
+          message: 'Band not found.'
+        })
+      }
+
+      const band = bandResults[0]
+
+      if (!band.is_active) {
+        return res.status(400).json({
+          message: 'You cannot edit the name of an inactive band.'
+        })
+      }
+
+      if (band.name === newName) {
+        return res.json({
+          message: 'Band name is already set to this value.',
+          band_id,
+          band_name: band.name
+        })
+      }
+
+      const updateSql = `
+        UPDATE bands
+        SET name = ?
+        WHERE id = ?
+      `
+
+      db.query(updateSql, [newName, band_id], (updateErr) => {
+        if (updateErr) {
+          console.error(updateErr)
+          return res.status(500).json({
+            message: 'Failed to update band name.'
+          })
+        }
+
+        return res.json({
+          message: 'Band name updated successfully!',
+          band_id,
+          old_name: band.name,
+          new_name: newName
+        })
+      })
+    })
+  })
+})
+
+
+
+
 // admin delete / de-activate a band
 // MS2 for now using soft delete, if need to change exact delete, will process later
 // ps: soft delete keeps historical bids/bookings safe.
@@ -1305,6 +1437,95 @@ router.get('/bookings', (req, res) => {
     })
 
 
+// POST /api/admin/edit-username
+// admin can edit any user's username at any time.
+// does NOT affect the user's own 14-day username change cooldown, only admin can change name at anytime
+router.post('/edit-username', (req, res) => {
+  const {
+    admin_user_id,
+    user_id,
+    username
+  } = req.body || {}
+
+  const newUsername = cleanEditableName(username)
+
+  if (!user_id || !newUsername) {
+    return res.status(400).json({
+      message: 'user_id and username are required.'
+    })
+  }
+
+  if (newUsername.length > 255) {
+    return res.status(400).json({
+      message: 'Username cannot exceed 255 characters.'
+    })
+  }
+
+  checkApprovedAdmin(admin_user_id, (adminErr, ok, statusCode, message) => {
+    if (adminErr) {
+      return res.status(500).json({
+        message: 'Failed to check admin permission.'
+      })
+    }
+
+    if (!ok) {
+      return res.status(statusCode).json({ message })
+    }
+
+    const findUserSql = `
+      SELECT id, username, email, role, status
+      FROM users
+      WHERE id = ?
+    `
+
+    db.query(findUserSql, [user_id], (findErr, userResults) => {
+      if (findErr) {
+        console.error(findErr)
+        return res.status(500).json({
+          message: 'Failed to find user.'
+        })
+      }
+
+      if (userResults.length === 0) {
+        return res.status(404).json({
+          message: 'User not found.'
+        })
+      }
+
+      const user = userResults[0]
+
+      if (user.username === newUsername) {
+        return res.json({
+          message: 'Username is already set to this value.',
+          user_id,
+          username: user.username
+        })
+      }
+
+      const updateSql = `
+        UPDATE users
+        SET username = ?
+        WHERE id = ?
+      `
+
+      db.query(updateSql, [newUsername, user_id], (updateErr) => {
+        if (updateErr) {
+          console.error(updateErr)
+          return res.status(500).json({
+            message: 'Failed to update username.'
+          })
+        }
+
+        return res.json({
+          message: 'Username updated successfully by admin.',
+          user_id,
+          old_username: user.username,
+          new_username: newUsername
+        })
+      })
+    })
+  })
+})
 
 // admin links a user to a band --> allow user to see their band slot
 // POST /api/admin/update-user-band
@@ -1364,6 +1585,8 @@ router.get('/users', (req, res) => {
       status,
       is_mr_certified,
       telegram_chat_id,
+      username_change_count,
+      last_username_changed_at,
       NULL AS created_at
     FROM users
     ORDER BY id DESC

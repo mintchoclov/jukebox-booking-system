@@ -14,8 +14,13 @@ CREATE TABLE IF NOT EXISTS users (
     role ENUM('admin', 'band', 'individual') DEFAULT 'individual',
     status ENUM('pending', 'approved', 'rejected', 'suspended') DEFAULT 'pending',
     is_mr_certified BOOLEAN DEFAULT FALSE,
-    band_id INT NULL
+    band_id INT NULL,
+    username_change_count INT DEFAULT 0,
+    last_username_changed_at TIMESTAMP NULL
     );
+
+
+
 CREATE TABLE IF NOT EXISTS bands (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

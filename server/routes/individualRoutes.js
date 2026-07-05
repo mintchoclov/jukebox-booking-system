@@ -122,6 +122,16 @@ function toMysqlDate(dateObj) {
     return formatLocalDate(dateObj)
 }
 
+// helper: used for individual edit username, has 14days cool down rule
+function cleanEditableName(value) {
+    return String(value || '').trim()
+}
+
+function addDays(dateValue, days) {
+    const date = new Date(dateValue)
+    date.setDate(date.getDate() + days)
+    return date
+}
 
 // self-practice booking opens Friday 12:00 AM for the following week.
 function isSelfPracticeWindowOpen(slotDate) {
@@ -787,4 +797,129 @@ router.post('/cancel-booking', (req, res) => {
     })
 })
 
+
+// MS3 added api, individual change their own user name, only can change freely 1 time after setting, then got 2 weeks cool down
+// POST /api/individual/edit-username
+// Individual can change username freely once after signup.
+// After the first self-change, future self-changes require waiting 14 days.
+router.post('/edit-username', (req, res) => {
+    const {
+        user_id,
+        username
+    } = req.body || {}
+
+    const newUsername = cleanEditableName(username)
+
+    if (!user_id || !newUsername) {
+        return res.status(400).json({
+            message: 'user_id and username are required.'
+        })
+    }
+
+    if (newUsername.length > 255) {
+        return res.status(400).json({
+            message: 'Username cannot exceed 255 characters.'
+        })
+    }
+
+    const findUserSql = `
+        SELECT
+            id,
+            username,
+            role,
+            status,
+            username_change_count,
+            last_username_changed_at
+        FROM users
+        WHERE id = ?
+    `
+
+    db.query(findUserSql, [user_id], (findErr, userResults) => {
+        if (findErr) {
+            console.error(findErr)
+            return res.status(500).json({
+                message: 'Failed to find user.'
+            })
+        }
+
+        if (userResults.length === 0) {
+            return res.status(404).json({
+                message: 'User not found.'
+            })
+        }
+
+        const user = userResults[0]
+
+        if (user.status !== 'approved') {
+            return res.status(403).json({
+                message: 'Only approved users can edit their username.'
+            })
+        }
+
+        // This endpoint is only for individual self-service username change.
+        // Admin changes should use /api/admin/edit-username and are not restricted.
+        if (user.role !== 'individual') {
+            return res.status(403).json({
+                message: 'This username change rule only applies to individual users.'
+            })
+        }
+
+        if (user.username === newUsername) {
+            return res.json({
+                message: 'Username is already set to this value.',
+                user_id,
+                username: user.username,
+                username_change_count: user.username_change_count || 0,
+                last_username_changed_at: user.last_username_changed_at
+            })
+        }
+
+        const changeCount = user.username_change_count || 0
+        const lastChangedAt = user.last_username_changed_at
+
+        // First self-change is free.
+        // After that, user must wait 14 days from the last self-change.
+        if (changeCount >= 1 && lastChangedAt) {
+            const nextAllowedAt = addDays(lastChangedAt, 14)
+            const now = new Date()
+
+            if (now < nextAllowedAt) {
+                return res.status(400).json({
+                    message: 'You can only change your username once every 14 days after your first change.',
+                    last_username_changed_at: lastChangedAt,
+                    next_allowed_at: nextAllowedAt
+                })
+            }
+        }
+
+        const updateSql = `
+            UPDATE users
+            SET
+                username = ?,
+                username_change_count = COALESCE(username_change_count, 0) + 1,
+                last_username_changed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `
+
+        db.query(updateSql, [newUsername, user_id], (updateErr) => {
+            if (updateErr) {
+                console.error(updateErr)
+                return res.status(500).json({
+                    message: 'Failed to update username.'
+                })
+            }
+
+            return res.json({
+                message: changeCount === 0
+                    ? 'Username updated successfully. This was your free username change.'
+                    : 'Username updated successfully.',
+                user_id,
+                old_username: user.username,
+                new_username: newUsername,
+                username_change_count: changeCount + 1,
+                last_username_changed_at: new Date()
+            })
+        })
+    })
+})
 module.exports = router
