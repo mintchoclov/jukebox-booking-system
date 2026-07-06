@@ -7,20 +7,25 @@ const notifications = require('../notifications')
 
 // helper function
 // fetch booking and check whether user is the band leader
+// when admin is band leader, he/she still be able to confirm/release band booking
 function getLeaderBooking(userId, bookingId, callback) {
   const sql = `
     SELECT
       bookings.*,
       bands.name AS band_name,
-      bands.leader_user_id
+      bands.leader_user_id,
+      band_members.member_role
     FROM bookings
     JOIN bands
       ON bookings.band_id = bands.id
+    LEFT JOIN band_members
+      ON band_members.band_id = bands.id
+      AND band_members.user_id = ?
     WHERE bookings.id = ?
       AND bookings.booking_type = 'band'
   `
 
-  db.query(sql, [bookingId], (err, results) => {
+  db.query(sql, [userId, bookingId], (err, results) => {
     if (err) {
       return callback(err)
     }
@@ -31,14 +36,19 @@ function getLeaderBooking(userId, bookingId, callback) {
 
     const booking = results[0]
 
-    if (Number(booking.leader_user_id) !== Number(userId)) {
+    const isLeaderByBandTable =
+      Number(booking.leader_user_id) === Number(userId)
+
+    const isLeaderByMemberTable =
+      booking.member_role === 'leader'
+
+    if (!isLeaderByBandTable && !isLeaderByMemberTable) {
       return callback(null, booking, 'Only the band leader can perform this action.')
     }
 
     callback(null, booking, null)
   })
 }
-
 function cleanEditableName(value) {
   return String(value || '').trim()
 }
@@ -69,6 +79,7 @@ function formatSgtDateTime(dateValue) {
 // GET /api/band/my-bands?user_id=1
 // User views all bands they belong to.
 // A user can be a member of multiple bands.
+// this part can directly check: const leaderBands = bands.filter(band => band.is_leader)
 router.get('/my-bands', (req, res) => {
   const { user_id } = req.query
 
@@ -86,6 +97,12 @@ router.get('/my-bands', (req, res) => {
       bands.leader_user_id,
       leader.username AS leader_username,
       band_members.member_role,
+      CASE
+        WHEN bands.leader_user_id = band_members.user_id
+          OR band_members.member_role = 'leader'
+        THEN TRUE
+        ELSE FALSE
+      END AS is_leader,
       bands.is_active,
       bands.band_name_change_count,
       bands.last_band_name_changed_at
@@ -278,6 +295,12 @@ router.get('/my-bookings', (req, res) => {
       bookings.band_id,
       bands.name AS band_name,
       band_members.member_role,
+      CASE
+        WHEN bands.leader_user_id = band_members.user_id
+          OR band_members.member_role = 'leader'
+        THEN TRUE
+        ELSE FALSE
+      END AS is_leader,
       bookings.booking_type,
       bookings.slot_category,
       bookings.slot_date,

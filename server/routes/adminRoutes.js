@@ -627,7 +627,10 @@ router.post('/create-band', (req, res) => {
 
         const updateUserSql = `
           UPDATE users
-          SET role = 'band'
+          SET role = CASE
+            WHEN role = 'admin' THEN 'admin'
+            ELSE 'band'
+          END
           WHERE id = ?
         `
 
@@ -1599,7 +1602,9 @@ router.get('/users', (req, res) => {
         band_members.member_role,
         bands.is_active,
         CASE
-          WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+          WHEN bands.leader_user_id = band_members.user_id
+            OR band_members.member_role = 'leader'
+          THEN TRUE
           ELSE FALSE
         END AS is_leader
       FROM band_members
@@ -1793,8 +1798,10 @@ router.get('/bands', (req, res) => {
       leader.username AS leader_username,
       leader.email AS leader_email,
       bands.band_type,
+      bands.band_name_change_count,
+      bands.last_band_name_changed_at,
       bands.is_active,
-      bands.created_at
+      bands.created_at,
     FROM bands
     LEFT JOIN users AS leader
       ON bands.leader_user_id = leader.id
