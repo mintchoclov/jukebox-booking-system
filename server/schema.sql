@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS bookings (
     reject_reason VARCHAR(255),
     cancel_reason VARCHAR(255),
     notes TEXT NULL,
+    humidifier_photo_url VARCHAR(500) NULL,
+    humidifier_photo_uploaded_at TIMESTAMP NULL,
     cancelled_at TIMESTAMP NULL,
     is_late_cancellation BOOLEAN DEFAULT FALSE,
     calendar_event_id VARCHAR(255),
