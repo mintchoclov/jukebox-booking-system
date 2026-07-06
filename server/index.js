@@ -1,5 +1,6 @@
 const express = require('express')
 const cors = require('cors')
+const path = require('path')
 require('dns').setDefaultResultOrder('ipv4first')
 require('dotenv').config()
 // 接入routes in index.js
@@ -27,6 +28,9 @@ app.use(cors({
   origin: true,
   credentials: true
 }))
+
+// url of photo uploaded will be like: /uploads/humidifier/xxx.jpg
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/bids', bidRoutes)

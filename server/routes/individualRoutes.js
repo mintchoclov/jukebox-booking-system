@@ -1,10 +1,15 @@
-// MS2 basic version: this is an individual booking api
+// MS3 version: this is an individual booking api
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
 const notifications = require('../notifications')
-
+// photo-taking for humidifier
+const {
+    uploadHumidifierPhoto,
+    buildHumidifierPhotoUrl,
+    deleteUploadedFile
+} = require('../humidifierUpload')
 // valid 2-hour slot times
 const validSlotTimes = [
   '08:00',
@@ -549,6 +554,8 @@ router.get('/view-my-bookings', (req, res) => {
             slot_time,
             status,
             notes,
+            humidifier_photo_url,
+            humidifier_photo_uploaded_at,
             cancel_reason,
             cancelled_at,
             is_late_cancellation,
@@ -936,6 +943,106 @@ router.post('/edit-username', (req, res) => {
                 new_username: newUsername,
                 username_change_count: changeCount + 1,
                 last_username_changed_at: new Date()
+            })
+        })
+    })
+})
+
+
+// POST /api/individual/upload-humidifier-photo
+// Individual user uploads humidifier photo for their own self-practice booking
+// band's photo is inside bandRoutes
+router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
+    const {
+        user_id,
+        booking_id
+    } = req.body || {}
+
+    if (!user_id || !booking_id) {
+        deleteUploadedFile(req.file)
+        return res.status(400).json({
+            message: 'user_id and booking_id are required.'
+        })
+    }
+
+    if (!req.file) {
+        return res.status(400).json({
+            message: 'photo is required.'
+        })
+    }
+
+    const findSql = `
+        SELECT
+            id,
+            user_id,
+            booking_type,
+            status,
+            slot_date,
+            slot_time,
+            humidifier_photo_url
+        FROM bookings
+        WHERE id = ?
+          AND booking_type = 'individual'
+    `
+
+    db.query(findSql, [booking_id], (findErr, results) => {
+        if (findErr) {
+            console.error(findErr)
+            deleteUploadedFile(req.file)
+            return res.status(500).json({
+                message: 'Failed to find booking.'
+            })
+        }
+
+        if (results.length === 0) {
+            deleteUploadedFile(req.file)
+            return res.status(404).json({
+                message: 'Individual booking not found.'
+            })
+        }
+
+        const booking = results[0]
+
+        if (Number(booking.user_id) !== Number(user_id)) {
+            deleteUploadedFile(req.file)
+            return res.status(403).json({
+                message: 'Only the booking owner can upload humidifier photo.'
+            })
+        }
+
+        if (booking.status !== 'confirmed') {
+            deleteUploadedFile(req.file)
+            return res.status(400).json({
+                message: 'Only confirmed bookings can upload humidifier photo.'
+            })
+        }
+
+        const photoUrl = buildHumidifierPhotoUrl(req.file)
+
+        const updateSql = `
+            UPDATE bookings
+            SET
+                humidifier_photo_url = ?,
+                humidifier_photo_uploaded_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND user_id = ?
+              AND booking_type = 'individual'
+        `
+
+        db.query(updateSql, [photoUrl, booking_id, user_id], (updateErr) => {
+            if (updateErr) {
+                console.error(updateErr)
+                deleteUploadedFile(req.file)
+                return res.status(500).json({
+                    message: 'Failed to save humidifier photo.'
+                })
+            }
+
+            return res.json({
+                message: 'Congrats! Humidifier photo uploaded successfully.',
+                booking_id,
+                user_id,
+                humidifier_photo_url: photoUrl
             })
         })
     })

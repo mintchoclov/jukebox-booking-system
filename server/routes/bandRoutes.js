@@ -4,6 +4,12 @@ const router = express.Router()
 const db = require('../db')
 const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
 const notifications = require('../notifications')
+const {
+  uploadHumidifierPhoto,
+  buildHumidifierPhotoUrl,
+  deleteUploadedFile
+} = require('../humidifierUpload')
+
 
 // helper function
 // fetch booking and check whether user is the band leader
@@ -336,6 +342,114 @@ router.get('/my-bookings', (req, res) => {
   })
 })
 
+
+// POST /api/band/upload-humidifier-photo
+// A band member or band leader uploads humidifier photo for a band booking.
+router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
+  const {
+    user_id,
+    booking_id
+  } = req.body || {}
+
+  if (!user_id || !booking_id) {
+    deleteUploadedFile(req.file)
+    return res.status(400).json({
+      message: 'user_id and booking_id are required.'
+    })
+  }
+
+  if (!req.file) {
+    return res.status(400).json({
+      message: 'photo is required.'
+    })
+  }
+
+  const findSql = `
+    SELECT
+      bookings.id,
+      bookings.band_id,
+      bookings.booking_type,
+      bookings.status,
+      bookings.slot_date,
+      bookings.slot_time,
+      bands.name AS band_name,
+      bands.leader_user_id,
+      band_members.member_role
+    FROM bookings
+    JOIN bands
+      ON bookings.band_id = bands.id
+    LEFT JOIN band_members
+      ON band_members.band_id = bands.id
+      AND band_members.user_id = ?
+    WHERE bookings.id = ?
+      AND bookings.booking_type = 'band'
+  `
+
+  db.query(findSql, [user_id, booking_id], (findErr, results) => {
+    if (findErr) {
+      console.error(findErr)
+      deleteUploadedFile(req.file)
+      return res.status(500).json({
+        message: 'Failed to find band booking.'
+      })
+    }
+
+    if (results.length === 0) {
+      deleteUploadedFile(req.file)
+      return res.status(404).json({
+        message: 'Band booking not found.'
+      })
+    }
+
+    const booking = results[0]
+
+    if (booking.status !== 'confirmed') {
+      deleteUploadedFile(req.file)
+      return res.status(400).json({
+        message: 'Only confirmed band bookings can upload humidifier photo.'
+      })
+    }
+
+    const isLeaderByBandTable = Number(booking.leader_user_id) === Number(user_id)
+    const isBandMember = Boolean(booking.member_role)
+
+    if (!isLeaderByBandTable && !isBandMember) {
+      deleteUploadedFile(req.file)
+      return res.status(403).json({
+        message: 'Only band members or band leader can upload humidifier photo for this booking.'
+      })
+    }
+
+    const photoUrl = buildHumidifierPhotoUrl(req.file)
+
+    const updateSql = `
+      UPDATE bookings
+      SET
+        humidifier_photo_url = ?,
+        humidifier_photo_uploaded_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND booking_type = 'band'
+    `
+
+    db.query(updateSql, [photoUrl, booking_id], (updateErr) => {
+      if (updateErr) {
+        console.error(updateErr)
+        deleteUploadedFile(req.file)
+        return res.status(500).json({
+          message: 'Failed to save humidifier photo.'
+        })
+      }
+
+      return res.json({
+        message: 'Congrats! Humidifier photo uploaded successfully!',
+        booking_id,
+        band_id: booking.band_id,
+        band_name: booking.band_name,
+        humidifier_photo_url: photoUrl
+      })
+    })
+  })
+})
 
 
 // POST /api/band/confirm-booking

@@ -1358,6 +1358,8 @@ router.get('/bookings', (req, res) => {
         bookings.status,
         bookings.reject_reason,
         bookings.notes,
+        bookings.humidifier_photo_url,
+        bookings.humidifier_photo_uploaded_at,
         bookings.created_at
       FROM bookings
       LEFT JOIN bands ON bookings.band_id = bands.id
@@ -1801,7 +1803,7 @@ router.get('/bands', (req, res) => {
       bands.band_name_change_count,
       bands.last_band_name_changed_at,
       bands.is_active,
-      bands.created_at,
+      bands.created_at
     FROM bands
     LEFT JOIN users AS leader
       ON bands.leader_user_id = leader.id
