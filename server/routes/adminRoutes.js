@@ -588,33 +588,7 @@ router.post('/create-band', (req, res) => {
     })
   }
 
-  if (leader_user_id) {
-    const leaderCheckSql = `
-      SELECT id
-      FROM bands
-      WHERE leader_user_id = ?
-        AND is_active = TRUE
-    `
-
-    db.query(leaderCheckSql, [leader_user_id], (leaderErr, leaderBands) => {
-      if (leaderErr) {
-        console.error(leaderErr)
-        return res.status(500).json({
-          message: 'Failed to check leader status.'
-        })
-      }
-
-      if (leaderBands.length > 0) {
-        return res.status(400).json({
-          message: 'This user is already the leader of another active band.'
-        })
-      }
-
-      createBand()
-    })
-  } else {
-    createBand()
-  }
+  createBand()
 
   function createBand() {
     const insertSql = `
@@ -1096,8 +1070,9 @@ router.post('/remove-band-member', (req, res) => {
 
 
 // POST /api/admin/assign-band-leader
-// admin assigns/reassigns a leader to a band.
-// a user can only lead ONE active band.
+// admin assigns/reassigns a leader to a band (MS3 version)
+// A user can lead multiple active bands.
+// If the user is admin, keep role as admin.
 router.post('/assign-band-leader', (req, res) => {
   const { band_id, user_id } = req.body || {}
 
@@ -1107,26 +1082,31 @@ router.post('/assign-band-leader', (req, res) => {
     })
   }
 
-  const leaderCheckSql = `
-    SELECT id, name
-    FROM bands
-    WHERE leader_user_id = ?
-      AND is_active = TRUE
-      AND id <> ?
+  const findUserSql = `
+    SELECT id, role, status
+    FROM users
+    WHERE id = ?
   `
 
-  db.query(leaderCheckSql, [user_id, band_id], (leaderErr, existingLeaderBands) => {
-    if (leaderErr) {
-      console.error(leaderErr)
+  db.query(findUserSql, [user_id], (userFindErr, userResults) => {
+    if (userFindErr) {
+      console.error(userFindErr)
       return res.status(500).json({
-        message: 'Failed to check existing leader assignment.'
+        message: 'Failed to find user.'
       })
     }
 
-    if (existingLeaderBands.length > 0) {
+    if (userResults.length === 0) {
+      return res.status(404).json({
+        message: 'User not found.'
+      })
+    }
+
+    const user = userResults[0]
+
+    if (user.status !== 'approved') {
       return res.status(400).json({
-        message: 'This user is already the leader of another active band.',
-        existing_band: existingLeaderBands[0]
+        message: 'Only approved users can be assigned as band leader.'
       })
     }
 
@@ -1184,13 +1164,16 @@ router.post('/assign-band-leader', (req, res) => {
 
           const updateUserSql = `
             UPDATE users
-            SET role = 'band'
+            SET role = CASE
+              WHEN role = 'admin' THEN 'admin'
+              ELSE 'band'
+            END
             WHERE id = ?
           `
 
-          db.query(updateUserSql, [user_id], (userErr) => {
-            if (userErr) {
-              console.error(userErr)
+          db.query(updateUserSql, [user_id], (roleErr) => {
+            if (roleErr) {
+              console.error(roleErr)
               return res.status(500).json({
                 message: 'Leader assigned, but failed to update user role.'
               })
@@ -1199,7 +1182,8 @@ router.post('/assign-band-leader', (req, res) => {
             res.json({
               message: 'Band leader assigned successfully.',
               band_id,
-              user_id
+              user_id,
+              user_role_after_assignment: user.role === 'admin' ? 'admin' : 'band'
             })
           })
         })
@@ -1207,7 +1191,6 @@ router.post('/assign-band-leader', (req, res) => {
     })
   })
 })
-
 
 
 
