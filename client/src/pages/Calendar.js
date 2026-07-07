@@ -25,6 +25,7 @@ function Calendar() {
   const [bookingSuccess, setBookingSuccess] = useState(false)
   const [cancelLoading, setCancelLoading] = useState(false)
   const [cancelSuccess, setCancelSuccess] = useState(false)
+  const [notes, setNotes] = useState('')
 
   useEffect(() => {
     if (!user || !user.id) {
@@ -88,7 +89,7 @@ function Calendar() {
       return ''
     }
     if (Number(booking.user_id) === Number(user.id)) {
-      return `Mine\n${booking.slot_category || 'primary'}`
+      return `Mine\n${booking.slot_category || 'primary'}${booking.notes ? '\n📝' : ''}`
     }
     if (booking.booking_type === 'band') return booking.band_name || 'Band'
     return `${booking.booked_by || 'Taken'}\n${booking.slot_category || 'primary'}`
@@ -158,6 +159,7 @@ function Calendar() {
     setSlotCategory(hasPrimaryThisWeek(date) ? 'extra' : 'primary')
     setSelectedAvailableSlot({ date, time })
     setSelectedSlot(null)
+    setNotes('')
   }
 
   function handleBook() {
@@ -172,7 +174,8 @@ function Calendar() {
         user_id: user.id,
         slot_date: getDateStr(selectedAvailableSlot.date),
         slot_time: selectedAvailableSlot.time,
-        slot_category: slotCategory
+        slot_category: slotCategory,
+        notes: notes.trim() || null
       })
     })
       .then(res => res.json())
@@ -287,7 +290,7 @@ function Calendar() {
             <div className="flex justify-between items-center mb-3">
               <p className="text-sm font-medium text-navy">Slot details</p>
               <button
-                onClick={() => { setSelectedSlot(null); setBookingError('') }}
+                onClick={() => { setSelectedSlot(null); setBookingError(''); setNotes('') }}
                 className="text-xs text-navy"
               >✕</button>
             </div>
@@ -315,6 +318,9 @@ function Calendar() {
                   </Badge>
                 )}
               </div>
+              {selectedSlot.notes && (Number(selectedSlot.user_id) === Number(user.id) || user.role === 'admin') && (
+                <p className="text-xs text-navy mt-2 italic">📝 {selectedSlot.notes}</p>
+              )}
             </div>
 
             {/* cancel own booking */}
@@ -408,6 +414,18 @@ function Calendar() {
                   ? 'Your main slot for the week'
                   : 'Additional slot — requires a primary slot first'}
               </p>
+            </div>
+            <div className="mb-4">
+              <p className="text-xs font-medium text-navy mb-2">Notes <span className="text-navy font-normal">(optional)</span></p>
+              <textarea
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                maxLength={500}
+                rows={3}
+                placeholder="e.g. Kehui is joining..."
+                className="w-full text-xs text-navy bg-cream border border-beige rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-primary"
+              />
+              <p className="text-xs text-navy text-right mt-1">{notes.length}/500</p>
             </div>
             <ErrorText>{bookingError}</ErrorText>
             {bookingSuccess && (

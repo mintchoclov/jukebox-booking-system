@@ -1,7 +1,7 @@
 export function Card({ children, className = '', ...props }) {
   return (
     <div
-      className={`bg-white rounded-2xl border border-beige ${className}`}
+      className={`bg-white dark:bg-white/6 dark:backdrop-blur-sm dark:border-white/10 rounded-2xl border border-beige ${className}`}
       {...props}
     >
       {children}
@@ -43,7 +43,7 @@ export function Badge({ children, variant = 'default', className = '' }) {
 
 export function SectionLabel({ children }) {
   return (
-    <p className="text-xs font-medium text-navy opacity-40 uppercase tracking-wider mb-3">
+    <p className="text-xs font-medium text-navy dark:text-white/40 opacity-40 dark:opacity-100 uppercase tracking-wider mb-3">
       {children}
     </p>
   )

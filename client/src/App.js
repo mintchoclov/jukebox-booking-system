@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -14,13 +14,47 @@ import Blobs from './components/Blobs'
 
 function App() {
   const [particles, setParticles] = useState([])
-  const lastTime = { current: 0}
+  const lastTime = useRef(0)
+  const [mousemoveEffects, setMousemoveEffects] = useState(
+    () => localStorage.getItem('mousemoveEffects') !== 'false'
+  )
+  const [clickEffects, setClickEffects] = useState(
+    () => localStorage.getItem('clickEffects') !== 'false'
+  )
+
+  const [darkMode, setDarkMode] = useState(
+    () => localStorage.getItem('darkMode') === 'true'
+  )
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [darkMode])
+
+  function toggleDarkMode(val) {
+    setDarkMode(val)
+    localStorage.setItem('darkMode', String(val))
+  }
+
+  const mousemoveRef = useRef(mousemoveEffects)
+  const clickRef = useRef(clickEffects)
+
+  useEffect(() => {
+    mousemoveRef.current = mousemoveEffects
+    console.log('mousemoveRef updated to:', mousemoveRef.current)
+  }, [mousemoveEffects])
+  useEffect(() => { clickRef.current = clickEffects }, [clickEffects])
 
   // attach cursor particle listener globally 这样所有的页面都可以有这个特效
   useEffect(() => {
     function handleMouseMove(e) { 
+      if (localStorage.getItem('mousemoveEffects') === 'false') return
       const now = Date.now()
-      if (now - lastTime.current < 100) return lastTime.current = now
+      if (now - lastTime.current < 20) return 
+      lastTime.current = now
 
       const emojis = ['♪', '♫', '✨', '⭐', '🎸', '💫']
       const emoji = emojis[Math.floor(Math.random() * emojis.length)] 
@@ -48,6 +82,7 @@ function App() {
   // 点击特效，爆发音符 !!!! global also 
   useEffect(() => {
     function clickEmojis(e) {
+      if (localStorage.getItem('clickEffects') === 'false') return
       const emojis = ['♪', '♫', '🎵', '🎶', '🎸', '🥁', '🎹']
       const cx = e.clientX
       const cy = e.clientY
@@ -81,6 +116,17 @@ function App() {
     window.addEventListener('click', clickEmojis)
     return () => window.removeEventListener('click', clickEmojis)
   }, [])
+  function toggleMousemove(val) {
+    setMousemoveEffects(val)
+    localStorage.setItem('mousemoveEffects', String(val))
+    if (!val) setParticles([])
+  }
+
+  function toggleClick(val) {
+    setClickEffects(val)
+    localStorage.setItem('clickEffects', String(val))
+  }
+  const effectsProps = { mousemoveEffects, clickEffects, toggleMousemove, toggleClick, darkMode, toggleDarkMode }
 
   return (
     <BrowserRouter>
@@ -112,9 +158,10 @@ function App() {
         <Route path = "/signup" element = {<Signup />} />
         <Route path = "/dashboard" element = {<Dashboard />} />
         <Route path = "/bidding" element = {<Bidding />} />
-        <Route path = "/admin" element = {<Admin />} />
-        <Route path = "/individual" element = {<Individual />} />
-        <Route path = "/leader" element = {<Leader />} />
+        <Route path="/admin" element={<Admin user={JSON.parse(localStorage.getItem('user') || '{}')} effectsProps={effectsProps} />} />
+          <Route path="/individual" element={<Individual user={JSON.parse(localStorage.getItem('user') || '{}')} effectsProps={effectsProps} />} />
+          <Route path="/leader" element={<Leader user={JSON.parse(localStorage.getItem('user') || '{}')} effectsProps={effectsProps} />} />
+          <Route path="/calendar" element={<Calendar />} />
         <Route path = "/calendar" element = {<Calendar />} />
         <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>

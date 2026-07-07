@@ -881,9 +881,9 @@ router.post('/edit-username', (req, res) => {
 
         // This endpoint is only for individual self-service username change.
         // Admin changes should use /api/admin/edit-username and are not restricted.
-        if (user.role !== 'individual') {
+        if (!['individual', 'band'].includes(user.role)) {
             return res.status(403).json({
-                message: 'This username change rule only applies to individual users.'
+                message: 'This username change rule only applies to individual and band users.'
             })
         }
 

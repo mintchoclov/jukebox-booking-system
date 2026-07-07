@@ -54,6 +54,9 @@ async function sendOtpEmail(to, otp) {
     from: 'JukeBox <noreply@jukeboxbooking.com>',
     to,
     subject: 'Your JukeBox verification code',
+      headers: {
+          'X-Entity-Ref-ID': `jukebox-otp-${Date.now()}`,
+      },
     html: `
       <p>Your JukeBox verification code is <b>${otp}</b>.</p>
       <p>It expires in 10 minutes. If this wasn't you, ignore this email.</p>
