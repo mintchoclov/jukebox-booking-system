@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS bands (
     band_type ENUM('standard', 'cbtr', 'low_priority')
     DEFAULT 'standard',
     band_name_change_count INT DEFAULT 0,
-    last_band_name_changed_at TIMESTAMP NULL
+    last_band_name_changed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -107,4 +107,12 @@ CREATE TABLE IF NOT EXISTS password_reset_otps (
     expires_at DATETIME NOT NULL,
     attempts INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+-- table for holiday mode, decide whether use holiday mode or normal school mode
+-- set holiday mode as true / false
+CREATE TABLE IF NOT EXISTS system_settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     );
