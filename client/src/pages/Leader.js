@@ -4,6 +4,7 @@ import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import { Card, Button, Spinner, Badge, SectionLabel, FormError } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
+import SettingsTab from '../components/SettingsTab'
 
 function getNextBiddingWeekMonday() {
   const now = new Date()
@@ -27,8 +28,9 @@ function getNextBiddingWeekMonday() {
   return `${year}-${month}-${day2}`
 }
 
-function Leader({user}) {
+function Leader({ user, effectsProps }) {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState('home')
   const [myBands, setMyBands] = useState([])
   const [bookings, setBookings] = useState([])
   const [bids, setBids] = useState([])
@@ -143,21 +145,21 @@ function Leader({user}) {
   const pendingConfirmation = bookings.filter(b =>
     b.status === 'confirmed' && b.band_confirmation_status === 'pending'
   )
+  const leaderBands = myBands.filter(b => b.is_leader || b.member_role === 'leader')
 
   const [y, m, d] = biddingWeekStart ? biddingWeekStart.split('-').map(Number) : [0, 0, 0]
   const targetWeekMonday = biddingWeekStart ? new Date(y, m - 1, d) : null
   const targetWeekSunday = targetWeekMonday ? new Date(targetWeekMonday.getTime() + 6 * 24 * 60 * 60 * 1000) : null
 
-  const targetWeekBids = bids.filter(b => {
-    if (!targetWeekMonday) return false
-    const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
-    return slotDate >= targetWeekMonday && slotDate <= targetWeekSunday &&
-      b.band_id === user.band_id
-  })
-
-
-  const bidsSubmitted = targetWeekBids.length >= 2
-
+  function bandBidsSubmitted(bandId) {
+    return bids.filter(b => {
+      if (!targetWeekMonday) return false
+      const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+      return slotDate >= targetWeekMonday && slotDate <= targetWeekSunday &&
+        Number(b.band_id) === Number(bandId)
+    }).length >= 2
+  }
+  
   function getNextBiddingDeadline() {
     const now = new Date()
     const day = now.getDay()
@@ -183,193 +185,212 @@ function Leader({user}) {
         <Card className="p-6 text-center mb-6">
           <img src={Mascot} alt="JukeBox mascot" className="w-32 mx-auto mb-3" />
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
-          <h1 className="text-2xl font-medium text-navy">{user.username} 🎸</h1>
-          {(() => {
-            const led = myBands.find(b => b.member_role === 'leader')
-              return (
-              < p className = "text-xs text-navy opacity-40 mt-1" > 
-              { led ? `Band Leader of ${led.band_name}` : 'Band Leader'}
-              </p>
-          )
-          })()}
+          <h1 className="text-2xl font-medium text-navy">{me.username} 🎸</h1>
+          <p className="text-xs text-navy opacity-40 mt-1 mb-1">Band leader</p>
+          <div className="flex flex-wrap justify-center gap-1">
+            {myBands.filter(b => b.is_leader || b.member_role === 'leader').map(band => (
+              <span key={band.band_id} className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: '#faeeda', color: '#854f0b' }}>
+                🎸 {band.band_name}
+              </span>
+            ))}
+          </div>
         </Card>
+
+        {/* tab bar */}
+        <div className="flex bg-cream border border-beige rounded-2xl p-1 mb-6">
+          {['home', 'settings'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 text-xs font-medium py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-white text-navy shadow-sm' : 'text-navy opacity-40'
+                }`}
+            >
+              {tab === 'home' ? '🏠 Home' : '⚙️ Settings'}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'home' && (
+          <div>
 
         {/* pending band confirmation */}
         {pendingConfirmation.length > 0 && (
-          <Card className="p-5 mb-4 bg-primarySoft">
-            <SectionLabel>Action needed — confirm or release</SectionLabel>
-            {actionError && <p className="text-dangerText text-xs mb-2">{actionError}</p>}
-            <div className="space-y-3">
-              {pendingConfirmation.map(slot => (
-                <div key={slot.booking_id} className="bg-white rounded-xl p-3">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="text-xs text-navy opacity-50">
-                        {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
-                          weekday: 'short', day: 'numeric', month: 'short'
-                        })}
-                      </p>
-                      <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
-                      {slot.band_confirmation_deadline && (
-                        <p className="text-xs text-dangerText opacity-70 mt-1">
-                          Confirm by: {new Date(slot.band_confirmation_deadline).toLocaleDateString('en-GB', {
-                            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-                          })}
-                        </p>
-                      )}
+              <div className="mb-4">
+                <SectionLabel>Action needed — confirm or release</SectionLabel>
+                {actionError && <p className="text-dangerText text-xs mb-2">{actionError}</p>}
+                {leaderBands.map(band => {
+                  const bandPending = pendingConfirmation.filter(b => Number(b.band_id) === Number(band.band_id))
+                  if (bandPending.length === 0) return null
+                  return (
+                    <div key={band.band_id} className="mb-3 border border-beige rounded-xl overflow-hidden">
+                      <div className="bg-primarySoft px-4 py-2 flex justify-between items-center border-b border-beige">
+                        <p className="text-xs font-medium text-navy">{band.band_name}</p>
+                        <Badge variant="pink">Awaiting you</Badge>
+                      </div>
+                      <div className="p-3 space-y-3 bg-white">
+                        {bandPending.map(slot => (
+                          <div key={slot.booking_id}>
+                            <p className="text-xs text-navy opacity-50">
+                              {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                                weekday: 'short', day: 'numeric', month: 'short'
+                              })}
+                            </p>
+                            <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                            {slot.band_confirmation_deadline && (
+                              <p className="text-xs text-dangerText opacity-70 mt-1">
+                                Confirm by: {new Date(slot.band_confirmation_deadline).toLocaleDateString('en-GB', {
+                                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            )}
+                            <div className="flex gap-2 mt-2">
+                              <Button variant="primary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => confirmBooking(slot.booking_id)}>
+                                Confirm slot
+                              </Button>
+                              <Button variant="secondary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => releaseBooking(slot.booking_id)}>
+                                Release slot
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <Badge variant="pink">Awaiting you</Badge>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="primary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => confirmBooking(slot.booking_id)}>
-                      Confirm slot
-                    </Button>
-                    <Button variant="secondary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => releaseBooking(slot.booking_id)}>
-                      Release slot
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+                  )
+                })}
+              </div>
+            )}
 
         {/* this week's slot */}
-        <Card className="p-5 mb-4">
-          <SectionLabel>This week's slot</SectionLabel>
-          {thisWeekSlots.length === 0 ? (
-            <p className="text-sm text-navy opacity-40 text-center py-4">
-              No confirmed slot this week
-            </p>
-          ) : (
-            thisWeekSlots.map(slot => (
-              <div key={slot.booking_id} className="bg-primarySoft rounded-xl p-3 mb-2">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-xs text-navy opacity-50">
-                      {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
-                        weekday: 'short', day: 'numeric', month: 'short'
-                      })}
-                    </p>
-                    <p className="text-sm font-medium text-navy">
-                      {slot.slot_time?.slice(0, 5)}
-                    </p>
-                    <p className="text-xs text-navy opacity-50 mt-0.5">
-                      {slot.band_name}
-                    </p>
-                  </div>
-                  <Badge variant={slot.band_confirmation_status === 'confirmed' ? 'success' : 'pink'}>{slot.band_confirmation_status === 'confirmed' ? 'Confirmed ✓' : 'Awaiting confirmation'}
-                  </Badge>
+            <Card className="p-5 mb-4">
+              <SectionLabel>This week's slots</SectionLabel>
+              {thisWeekSlots.length === 0 ? (
+                <p className="text-sm text-navy opacity-40 text-center py-4">No confirmed slots this week</p>
+              ) : leaderBands.length > 1 ? (
+
+                <div className="grid grid-cols-2 gap-3">
+                  {leaderBands.map(band => {
+                    const bandSlots = thisWeekSlots.filter(b => Number(b.band_id) === Number(band.band_id))
+                    return (
+                      <div key={band.band_id} className="bg-primarySoft rounded-xl p-3">
+                        <p className="text-xs text-navy opacity-50 mb-2">{band.band_name}</p>
+                        {bandSlots.length === 0 ? (
+                          <p className="text-xs text-navy opacity-30">No slot</p>
+                        ) : bandSlots.map(slot => (
+                          <div key={slot.booking_id} className="mb-2 last:mb-0">
+                            <p className="text-xs font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                            <p className="text-xs text-navy opacity-50">
+                              {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            </p>
+                            <Badge variant={slot.band_confirmation_status === 'confirmed' ? 'success' : 'pink'} className="mt-1" style={{ fontSize: '9px' }}>
+                              {slot.band_confirmation_status === 'confirmed' ? 'Confirmed ✓' : 'Pending'}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
-            ))
-          )}
-        </Card>
+              ) : (
+                thisWeekSlots.map(slot => (
+                  <div key={slot.booking_id} className="bg-primarySoft rounded-xl p-3 mb-2">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs text-navy opacity-50">
+                          {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </p>
+                        <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                        <p className="text-xs text-navy opacity-50 mt-0.5">{slot.band_name}</p>
+                      </div>
+                      <Badge variant={slot.band_confirmation_status === 'confirmed' ? 'success' : 'pink'}>
+                        {slot.band_confirmation_status === 'confirmed' ? 'Confirmed ✓' : 'Awaiting confirmation'}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </Card>
 
         {/* bidding status */}
-        <Card className="p-5 mb-4">
-          <SectionLabel>Next week bidding</SectionLabel>
-          <div className="flex justify-between items-center">
-            <div>
+            <Card className="p-5 mb-4">
+              <SectionLabel>Next week bidding</SectionLabel>
               {!biddingOpen ? (
-                <>
-                  <p className="text-sm font-medium text-navy">Bidding not open yet</p>
-                  <p className="text-xs text-navy opacity-50 mt-1">Admin hasn't opened it yet</p>
-                </>
-              ) : bidsSubmitted ? (
-                <>
-                  <p className="text-sm font-medium text-navy">Bids submitted ✓</p>
-                  <p className="text-xs text-navy opacity-50 mt-1">
-                    Deadline: {getNextBiddingDeadline()} 12pm
-                  </p>
-                </>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-medium text-navy">Bidding not open yet</p>
+                    <p className="text-xs text-navy opacity-50 mt-1">Admin hasn't opened it yet</p>
+                  </div>
+                  <Badge>Closed 🔒</Badge>
+                </div>
+              ) : leaderBands.length > 1 ? (
+                // NEW: 2-column grid, one per band, each with its own submit button linking to /bidding?band_id=X
+                <div>
+                  <p className="text-xs text-navy opacity-50 mb-3">Deadline: {getNextBiddingDeadline()} 12pm</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {leaderBands.map(band => {
+                      const submitted = bandBidsSubmitted(band.band_id)
+                      return (
+                        <div key={band.band_id} className="bg-primarySoft rounded-xl p-3">
+                          <p className="text-xs text-navy opacity-50 mb-2">{band.band_name}</p>
+                          <Badge variant={submitted ? 'success' : 'pink'} style={{ fontSize: '9px', display: 'block', marginBottom: '8px' }}>
+                            {submitted ? 'Done ✓' : 'Pending !'}
+                          </Badge>
+                          <button
+                            onClick={() => navigate(`/bidding?band_id=${band.band_id}`)}
+                            className="w-full text-xs bg-primary text-navy px-2 py-1.5 rounded-lg font-medium"
+                          >
+                            {submitted ? '✏️ Edit' : '🎸 Submit'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               ) : (
-                <>
-                  <p className="text-sm font-medium text-navy">Bids not submitted yet!</p>
-                  <p className="text-xs text-navy opacity-50 mt-1">
-                    Deadline: {getNextBiddingDeadline()} 12pm
-                  </p>
-                </>
+                // single band — original layout
+                <div className="flex justify-between items-center">
+                  <div>
+                    {bandBidsSubmitted(leaderBands[0]?.band_id) ? (
+                      <><p className="text-sm font-medium text-navy">Bids submitted ✓</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
+                    ) : (
+                      <><p className="text-sm font-medium text-navy">Bids not submitted yet!</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
+                    )}
+                  </div>
+                  <Badge variant={bandBidsSubmitted(leaderBands[0]?.band_id) ? 'primary' : 'pink'}>
+                    {bandBidsSubmitted(leaderBands[0]?.band_id) ? 'Done ✓' : 'Pending !'}
+                  </Badge>
+                </div>
               )}
-            </div>
-            {!biddingOpen
-              ? <Badge>Closed 🔒</Badge>
-              : bidsSubmitted
-                ? <Badge variant="primary">Done ✓</Badge>
-                : <Badge variant="pink">Pending !</Badge>
-            }
-          </div>
-        </Card>
-
-        {/* telegram status */}
-        <Card className="p-5 mb-6">
-          <SectionLabel>Notifications</SectionLabel>
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-sm font-medium text-navy">Telegram</p>
-              <p className="text-xs text-navy opacity-50 mt-1">
-                {me.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-            <Badge variant={me.telegram_chat_id ? 'success' : 'danger'}>
-              {me.telegram_chat_id ? 'Active' : 'Inactive'}
-            </Badge>
-            {!me.telegram_chat_id && (
-              <a
-                href="https://t.me/jukebox_booking_bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline"
-              >
-                  Link ↗
-              </a>
+            </Card>
+            {/* NEW: single band submit button — only shown when leading exactly one band */}
+            {biddingOpen && leaderBands.length === 1 && (
+              <Button variant="primary" className="w-full mb-3"
+                onClick={() => navigate(`/bidding?band_id=${leaderBands[0]?.band_id}`)}>
+                {bandBidsSubmitted(leaderBands[0]?.band_id) ? '✏️ Edit Band Bids' : '🎸 Submit Band Bids'}
+              </Button>
             )}
-            </div>
-          </div>
-        </Card>
-        
-        <a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block mb-4"
-        >
-          <Card className="p-5 flex justify-between items-center hover:opacity-80 transition-opacity">
-            <div>
-              <p className="text-sm font-medium text-navy">Google Calendar</p>
-              <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
-            </div>
-            <Badge variant="success">Open ↗</Badge>
-          </Card>
-        </a>
 
-        {/* band bidding */}
-        {biddingOpen && (
-          <Button
-            variant="primary"
-            className="w-full mb-3"
-            onClick={() => navigate('/bidding')}
-          >
-            {bidsSubmitted ? '✏️ Edit Band Bids' : '🎸 Submit Band Bids'}
-          </Button>
+            <Button variant="secondary" className="w-full mb-3" onClick={() => navigate('/calendar')}>
+              Book Self Practice 🎵
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={handleLogout}>
+              Log Out
+            </Button>
+          </div>
         )}
 
-        {/* self practice booking — goes to calendar */}
-        <Button
-          variant="secondary"
-          className="w-full mb-3"
-          onClick={() => navigate('/calendar')}
-        >
-          Book Self Practice 🎵
-        </Button>
-
-        <Button
-          variant="ghost"
-          className="w-full"
-          onClick={handleLogout}
-        >
-          Log Out
-        </Button>
+        {activeTab === 'settings' && (
+          <SettingsTab
+            user={me}
+            me={me}
+            effectsProps={effectsProps}
+            role="leader"
+            myBands={myBands}
+            onLogout={handleLogout}
+            onUsernameChange={newName => setMe(prev => ({ ...prev, username: newName }))}
+            onBandNameChange={(bandId, newName) => setMyBands(prev => prev.map(b => b.band_id === bandId ? { ...b, band_name: newName } : b))}
+          />
+        )}
 
       </div>
     </div>

@@ -8,13 +8,12 @@ import { Card, Button, Badge, SectionLabel, Spinner } from '../components/UI'
 import SlotGrid from '../components/Slotgrid'
 import { getWeekDates, getBookingDateStr, getDateStr } from '../components/dateutils'
 import { biddingSlotStyles, biddingLegendItems, DAYS, TIMES, TIME_VALS, TIME_SLOTS } from '../components/calendarstyle'
+import SettingsTab from '../components/SettingsTab'
 
-const tabs = ['overview', 'bookings', 'bidding', 'users', 'my booking', 'settings']
-
-function Admin({ user }) {
+function Admin({ user, effectsProps }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
-
+  const [showBandDropdown, setShowBandDropdown] = useState(false)
   const [bids, setBids] = useState([])
   const [myBands, setMyBands] = useState([])
   const [mySelfBookings, setMySelfBookings] = useState([])
@@ -48,7 +47,6 @@ function Admin({ user }) {
   const weekDates = getWeekDates(weekOffset)
   const bookingsWeekDates = getWeekDates(bookingsWeekOffset)
 
-  // helper to get the next bidding target week monday
   function getNextBiddingWeekMonday() {
     const now = new Date()
     const day = now.getDay()
@@ -471,6 +469,8 @@ function Admin({ user }) {
     localStorage.removeItem('user')
     navigate('/login')
   }
+  const isAdminLeader = myBands.some(b => b.is_leader || b.member_role === 'leader')
+  const tabs = ['overview', 'bookings', 'bidding', 'users', 'my booking', ...(isAdminLeader ? ['my bands'] : []), 'settings']
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -490,14 +490,40 @@ function Admin({ user }) {
               <h1 className="text-2xl font-medium text-navy">Admin Panel</h1>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex flex-col items-end">
-                <Badge variant="pink">{user?.username}</Badge>
-                {myBands.map(band => (
-                  <span key={band.band_id} className="text-xs text-navy opacity-50 mt-0.5">
-                    {band.member_role === 'leader' ? 'Band leader of ' : 'Member of '}
-                    <span className="font-medium">{band.band_name}</span>
-                  </span>
-                ))}
+              <div className="flex flex-col items-end gap-1 relative">
+                <div className="flex items-center gap-2">
+                  <Badge variant="pink">{user?.username}</Badge>
+                  <span className="text-xs bg-beige text-navy px-2 py-0.5 rounded-full">admin</span>
+                  {myBands.length > 0 && (
+                    <button
+                      onClick={() => setShowBandDropdown(prev => !prev)}
+                      className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ background: '#faeeda', color: '#854f0b' }}
+                    >
+                      🎸 {myBands.length} band{myBands.length !== 1 ? 's' : ''} {showBandDropdown ? '▴' : '▾'}
+                    </button>
+                  )}
+                </div>
+                {showBandDropdown && myBands.length > 0 && (
+                  <div className="absolute top-full mt-1 right-0 z-50 bg-cream border border-beige rounded-xl p-3 min-w-[180px] shadow-sm">
+                    {myBands.some(b => b.is_leader || b.member_role === 'leader') && (
+                      <div className="mb-2">
+                        <p className="text-xs text-navy opacity-40 uppercase tracking-wider mb-1">Leading</p>
+                        {myBands.filter(b => b.is_leader || b.member_role === 'leader').map(b => (
+                          <p key={b.band_id} className="text-xs text-navy font-medium">{b.band_name}</p>
+                        ))}
+                      </div>
+                    )}
+                    {myBands.some(b => !b.is_leader && b.member_role !== 'leader') && (
+                      <div>
+                        <p className="text-xs text-navy opacity-40 uppercase tracking-wider mb-1">Member</p>
+                        {myBands.filter(b => !b.is_leader && b.member_role !== 'leader').map(b => (
+                          <p key={b.band_id} className="text-xs text-navy">{b.band_name}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <button onClick={handleLogout} className="text-xs text-navy opacity-50">Logout</button>
             </div>
@@ -631,7 +657,7 @@ function Admin({ user }) {
                     )
                     if (!booking) return ''
                     if (booking.booking_type === 'band') return booking.band_name || 'Band'
-                    return booking.booked_by || 'Individual'
+                    return `${booking.booked_by || 'Individual'}${booking.notes ? '\n📝' : ''}`
                   }}
                   onSlotClick={(di, ti) => {
                     const date = bookingsWeekDates[di]
@@ -679,6 +705,9 @@ function Admin({ user }) {
                       )}
                       <Badge variant="success">{selectedBooking.status}</Badge>
                     </div>
+                    {selectedBooking.notes && (
+                      <p className="text-xs text-navy mt-2 italic">📝 {selectedBooking.notes}</p>
+                    )}
                   </div>
                 </Card>
               )}
@@ -1280,6 +1309,184 @@ function Admin({ user }) {
               </Card>
             </div>
           )}
+          {/* ===== MY BANDS ===== */}
+          {activeTab === 'my bands' && (() => {
+            const leaderBands = myBands.filter(b => b.is_leader || b.member_role === 'leader')
+
+            const now = new Date()
+            const nowDay = now.getDay()
+            const wkStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((nowDay + 6) % 7))
+            wkStart.setHours(0, 0, 0, 0)
+            const wkEnd = new Date(wkStart)
+            wkEnd.setDate(wkStart.getDate() + 6)
+            wkEnd.setHours(23, 59, 59, 999)
+
+            const [y, m, d] = biddingWeekStart ? biddingWeekStart.split('-').map(Number) : [0, 0, 0]
+            const targetWeekMonday = biddingWeekStart ? new Date(y, m - 1, d) : null
+            const targetWeekSunday = targetWeekMonday ? new Date(targetWeekMonday.getTime() + 6 * 24 * 60 * 60 * 1000) : null
+
+            const pendingConfirmation = myBandBookings.filter(b =>
+              b.status === 'confirmed' && b.band_confirmation_status === 'pending'
+            )
+
+            const thisWeekSlots = myBandBookings.filter(b => {
+              const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+              return slotDate >= wkStart && slotDate <= wkEnd && b.status === 'confirmed'
+            })
+
+            function bandBidsSubmitted(bandId) {
+              return bids.filter(b => {
+                if (!targetWeekMonday) return false
+                const slotDate = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+                return slotDate >= targetWeekMonday && slotDate <= targetWeekSunday &&
+                  Number(b.band_id) === Number(bandId)
+              }).length >= 2
+            }
+
+            function confirmBandBooking(bookingId) {
+              fetch(`${API_URL}/api/band/confirm-booking`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: user.id, booking_id: bookingId })
+              })
+                .then(res => res.json())
+                .then(data => {
+                  if (!data.message?.includes('Failed') && !data.message?.includes('Only')) {
+                    fetchAll()
+                  }
+                })
+                .catch(() => { })
+            }
+
+            function releaseBandBooking(bookingId) {
+              fetch(`${API_URL}/api/band/release-booking`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: user.id, booking_id: bookingId, release_reason: 'Released by band leader' })
+              })
+                .then(res => res.json())
+                .then(() => fetchAll())
+                .catch(() => { })
+            }
+
+            const deadlineLabel = (() => {
+              const now = new Date()
+              const day = now.getDay()
+              const daysUntilThursday = (4 - day + 7) % 7 || 7
+              const thursday = new Date(now)
+              thursday.setDate(now.getDate() + daysUntilThursday)
+              return thursday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+            })()
+
+            return (
+              <div>
+                {pendingConfirmation.length > 0 && (
+                  <div className="mb-6">
+                    <SectionLabel>Action needed — confirm or release</SectionLabel>
+                    {leaderBands.map(band => {
+                      const bandPending = pendingConfirmation.filter(b => Number(b.band_id) === Number(band.band_id))
+                      if (bandPending.length === 0) return null
+                      return (
+                        <div key={band.band_id} className="mb-3 border border-beige rounded-xl overflow-hidden">
+                          <div className="bg-primarySoft px-4 py-2 flex justify-between items-center border-b border-beige">
+                            <p className="text-xs font-medium text-navy">{band.band_name}</p>
+                            <Badge variant="pink">Awaiting you</Badge>
+                          </div>
+                          <div className="p-3 space-y-3 bg-white">
+                            {bandPending.map(slot => (
+                              <div key={slot.booking_id}>
+                                <p className="text-xs text-navy opacity-50">
+                                  {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                                    weekday: 'short', day: 'numeric', month: 'short'
+                                  })}
+                                </p>
+                                <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                                {slot.band_confirmation_deadline && (
+                                  <p className="text-xs text-dangerText opacity-70 mt-1">
+                                    Confirm by: {new Date(slot.band_confirmation_deadline).toLocaleDateString('en-GB', {
+                                      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                                    })}
+                                  </p>
+                                )}
+                                <div className="flex gap-2 mt-2">
+                                  <Button variant="primary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => confirmBandBooking(slot.booking_id)}>
+                                    Confirm slot
+                                  </Button>
+                                  <Button variant="secondary" className="flex-1 px-3 py-1.5 text-xs" onClick={() => releaseBandBooking(slot.booking_id)}>
+                                    Release slot
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <SectionLabel>This week's slots</SectionLabel>
+                {thisWeekSlots.length === 0 ? (
+                  <p className="text-sm text-navy opacity-40 text-center py-4 mb-6">No confirmed slots this week</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                    {leaderBands.map(band => {
+                      const bandSlots = thisWeekSlots.filter(b => Number(b.band_id) === Number(band.band_id))
+                      return (
+                        <Card key={band.band_id} className="p-4 bg-primarySoft">
+                          <p className="text-xs font-medium text-navy opacity-60 mb-2">{band.band_name}</p>
+                          {bandSlots.length === 0 ? (
+                            <p className="text-xs text-navy opacity-30">No slot this week</p>
+                          ) : bandSlots.map(slot => (
+                            <div key={slot.booking_id} className="mb-2 last:mb-0">
+                              <p className="text-sm font-medium text-navy">{slot.slot_time?.slice(0, 5)}</p>
+                              <p className="text-xs text-navy opacity-50">
+                                {new Date(getBookingDateStr(slot.slot_date) + 'T12:00:00').toLocaleDateString('en-GB', {
+                                  weekday: 'short', day: 'numeric', month: 'short'
+                                })}
+                              </p>
+                              <Badge variant={slot.band_confirmation_status === 'confirmed' ? 'success' : 'pink'} className="mt-1">
+                                {slot.band_confirmation_status === 'confirmed' ? 'Confirmed ✓' : 'Awaiting confirmation'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <SectionLabel>Bids — next week</SectionLabel>
+                {!biddingOpen ? (
+                  <Card className="p-4 mb-6 flex justify-between items-center">
+                    <p className="text-sm font-medium text-navy">Bidding not open yet</p>
+                    <Badge>Closed 🔒</Badge>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                    {leaderBands.map(band => {
+                      const submitted = bandBidsSubmitted(band.band_id)
+                      return (
+                        <Card key={band.band_id} className="p-4">
+                          <p className="text-xs font-medium text-navy opacity-60 mb-2">{band.band_name}</p>
+                          <p className="text-xs text-navy opacity-50 mb-3">Deadline: {deadlineLabel} 12pm</p>
+                          <div className="flex justify-between items-center">
+                            <Badge variant={submitted ? 'success' : 'pink'}>
+                              {submitted ? 'Done ✓' : 'Pending !'}
+                            </Badge>
+                            <button
+                              onClick={() => navigate(`/bidding?band_id=${band.band_id}`)}
+                              className="text-xs bg-primary text-navy px-3 py-1.5 rounded-lg font-medium"
+                            >
+                              {submitted ? '✏️ Edit bids' : '🎸 Submit bids'}
+                            </button>
+                          </div>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* ===== SETTINGS ===== */}
           {activeTab === 'settings' && (
@@ -1319,52 +1526,20 @@ function Admin({ user }) {
                   </div>
                   <span className="text-xs text-navy opacity-40">›</span>
                 </Card>
-                <a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block"
-                >
-                <Card className="p-4 flex justify-between items-center hover:opacity-80 transition-opacity">
-                  <div>
-                    <p className="text-sm font-medium text-navy">Google Calendar</p>
-                    <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
-                  </div>
-                  <Badge variant="success">Open ↗</Badge>
-                </Card>
-              </a>
-                {!me?.telegram_chat_id ? (
-                  <a
-                href="https://t.me/jukebox_booking_bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block"
-                  >
-                <Card className="p-4 flex justify-between items-center hover:opacity-80 transition-opacity">
-                  <div>
-                    <p className="text-sm font-medium text-navy">Telegram bot</p>
-                    <p className="text-xs text-navy opacity-50 mt-1">Not linked — tap to connect</p>
-                  </div>
-                  <Badge variant="danger">Link ↗</Badge>
-                </Card>
-              </a>
-              ) : (
-              <Card className="p-4 flex justify-between items-center">
-                <div>
-                  <p className="text-sm font-medium text-navy">Telegram bot</p>
-                  <p className="text-xs text-navy opacity-50 mt-1">Notifications linked ✓</p>
-                </div>
-                <Badge variant="success">Active</Badge>
-              </Card>
-                )}
+              </div>
 
               {error && <p className="text-dangerText text-xs mb-4">{error}</p>}
-              <Button variant="secondary" className="px-8" onClick={handleLogout}>
-                Log Out
-              </Button>
-            </div>
+
+              <SettingsTab
+                user={me}
+                me={me}
+                effectsProps={effectsProps}
+                role="admin"
+                myBands={[]}
+                onLogout={handleLogout}
+              />
             </div>
           )}
-
         </div>
       </div>
     </div>

@@ -4,9 +4,11 @@ import API_URL from '../config'
 import Mascot from '../assets/mascot.svg'
 import { Card, Button, Badge, SectionLabel } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
+import SettingsTab from '../components/SettingsTab'
 
-function Individual({ user }) {
+function Individual({ user, effectsProps }) {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState('home')
   const [myBands, setMyBands] = useState([])
   const [bookings, setBookings] = useState([])
   const [bandBookings, setBandBookings] = useState([])
@@ -32,13 +34,6 @@ function Individual({ user }) {
       .then(res => res.json())
       .then(data => setMyBands(Array.isArray(data) ? data : []))
       .catch(() => { })
-
-    fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.id) localStorage.setItem('user', JSON.stringify(data))
-      })
-      .catch(() => {})
 
     fetch(`${API_URL}/api/individual/view-my-bookings?user_id=${user.id}`)
       .then(res => res.json())
@@ -96,17 +91,39 @@ function Individual({ user }) {
         <Card className="p-6 text-center mb-6">
           <img src={Mascot} alt="JukeBox mascot" className="w-32 mx-auto mb-3" />
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
-          <h1 className="text-2xl font-medium text-navy">{user.username} 🎵</h1>
+          <h1 className="text-2xl font-medium text-navy">{me.username} 🎵</h1>
           <p className="text-xs text-navy opacity-40 mt-1">Ridge View RC · Individual</p>
-          {myBands.map(band => (
-            <p key={band.band_id} className="text-xs text-navy opacity-50 mt-0.5">
-              {band.member_role === 'leader' ? 'Band leader of ' : 'Member of '}
-              <span className="font-medium">{band.band_name}</span>
-            </p>
-          ))}
+          {myBands.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-1 mt-1">
+              {myBands.map(band => (
+                <span key={band.band_id} className="text-xs px-2 py-0.5 rounded-full"
+                  style={band.is_leader || band.member_role === 'leader'
+                    ? { background: '#faeeda', color: '#854f0b' }
+                    : { background: '#f1efe8', color: '#5f5e5a' }}>
+                  {band.is_leader || band.member_role === 'leader' ? '🎸 ' : '👥 '}{band.band_name}
+                </span>
+              ))}
+            </div>
+          )}
+
         </Card>
 
-        {/* my bookings */}
+        {/* tab bar */}
+        <div className="flex bg-cream border border-beige rounded-2xl p-1 mb-6">
+          {['home', 'settings'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 text-xs font-medium py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-white text-navy shadow-sm' : 'text-navy opacity-40'
+                }`}
+            >
+              {tab === 'home' ? '🏠 Home' : '⚙️ Settings'}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'home' && (
+          <div>
         <Card className="p-5 mb-4">
           <SectionLabel>My bookings</SectionLabel>
           {upcomingBookings.length === 0 ? (
@@ -183,61 +200,31 @@ function Individual({ user }) {
             <Badge>Upcoming</Badge>
           </div>
         </Card>
-
-        {/* telegram status */}
-        <Card className="p-5 mb-6">
-          <SectionLabel>Notifications</SectionLabel>
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-sm font-medium text-navy">Telegram</p>
-              <p className="text-xs text-navy opacity-50 mt-1">
-                {me.telegram_chat_id ? 'Notifications linked ✓' : 'Not linked yet'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-            <Badge variant={me.telegram_chat_id ? 'success' : 'danger'}>
-              {me.telegram_chat_id ? 'Active' : 'Inactive'}
-            </Badge>
-            {!me.telegram_chat_id && (
-              <a
-                href="https://t.me/jukebox_booking_bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline"
-              >
-                Link ↗
-              </a>
-            )}
-              
-            </div>
-          </div>
-        </Card>
         
-        < a href="https://calendar.google.com/calendar/u/0/embed?src=00aff1a71fc21b9c44daa583ab89958dc986dd0cbb9a0ff20b0f5035eb2ebe60@group.calendar.google.com&ctz=Asia/Singapore"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block mb-4"
-        >
-          <Card className="p-5 flex justify-between items-center hover:opacity-80 transition-opacity">
-            <div>
-              <p className="text-sm font-medium text-navy">Google Calendar</p>
-              <p className="text-xs text-navy opacity-50 mt-1">View the shared MR booking calendar</p>
-            </div>
-            <Badge variant="success">Open ↗</Badge>
-          </Card>
-        </a>
-        {/* action buttons */}
-        <Button variant="primary" className="w-full mb-3" onClick={() => navigate('/calendar')}>
-          Book a Slot
-        </Button>
+            <Button variant="primary" className="w-full mb-3" onClick={() => navigate('/calendar')}>
+              Book a Slot
+            </Button>
+            <Button variant="secondary" className="w-full" onClick={handleLogout}>
+              Log Out
+            </Button>
+          </div>
+        )}
+        
+        {activeTab === 'settings' && (
+          <SettingsTab
+            user={me}
+            me={me}
+            effectsProps={effectsProps}
+            role="individual"
+            myBands={myBands}
+            onLogout={handleLogout}
+            onUsernameChange={newName => setMe(prev => ({ ...prev, username: newName }))}
+          />
+        )}
 
-        <Button variant="secondary" className="w-full" onClick={handleLogout}>
-          Log Out
-        </Button>
-
-      </div>
+          </div>
     </div>
-  )
+      )
 }
 
 export default Individual

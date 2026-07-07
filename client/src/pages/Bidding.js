@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import API_URL from '../config'
 import { Card, Button, SectionLabel, Spinner } from '../components/UI'
 import SlotGrid from '../components/Slotgrid'
@@ -9,7 +9,7 @@ import { DAYS, TIMES, TIME_VALS, TIME_SLOTS, biddingLegendItems, getBiddingSlotS
 function getBidPoints(bandType) {
   switch (bandType) {
     case 'cbtr': return [4, 3, 2] // performance band
-    case 'low_priority': return [2, 1] // ad-hoc/senior only 2 choices
+    case 'low_priority': return [2, 1, 0] // ad-hoc/senior only 2 choices
     default: return [3, 2, 1] // standard band
   }
 }
@@ -35,8 +35,12 @@ function getNextBiddingWeekMonday() {
 
 function Bidding() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
 
+  const paramBandId = searchParams.get('band_id')
+  const activeBandId = paramBandId ? Number(paramBandId) : user.band_id 
+  
   const [bids, setBids] = useState([])
   const [submittedBids, setSubmittedBids] = useState([])
   const [myBand, setMyBand] = useState(null)
@@ -85,7 +89,7 @@ function Bidding() {
           getDateStr(new Date(y, m - 1, d + i, 12, 0, 0))
         )
         const mine = allBids
-          .filter(b => Number(b.band_id) === Number(user.band_id))
+          .filter(b => Number(b.band_id) === Number(activeBandId))
           .filter(b => weekDateStrs.includes(getBookingDateStr(b.slot_date)))
           .map(b => ({
             day: String(weekDateStrs.indexOf(getBookingDateStr(b.slot_date))),
@@ -99,9 +103,11 @@ function Bidding() {
       .then(res => res.json())
       .then(data => {
         const bands = Array.isArray(data) ? data : []
-        // find the band this user leads (or just their first band)
-        const led = bands.find(b => Number(b.leader_user_id) === Number(user.id))
-        setMyBand(led || bands[0] || null)
+        const band = bands.find(b => Number(b.band_id) === Number(activeBandId))
+          || bands.find(b => b.is_leader || b.member_role === 'leader')
+          || bands[0]
+          || null
+        setMyBand(band)
       })
       .catch(() => { })
 
@@ -126,7 +132,7 @@ function Bidding() {
         setConfirmedSlots(confirmed)
       })
       .catch(() => {})
-  }, [])
+  }, [activeBandId])
 
   function getTotalPts(dayIdx, timeIdx) {
     const dateStr = biddingWeekDates[dayIdx] ? getDateStr(biddingWeekDates[dayIdx]) : ''
@@ -257,7 +263,7 @@ function Bidding() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        band_id: user.band_id,
+        band_id: activeBandId,
         user_id: user.id,
         bids: bidsPayload
       })
@@ -307,7 +313,7 @@ function Bidding() {
         <Card className="p-8 text-center">
           <div className="text-5xl mb-4">🎸</div>
           <h1 className="text-xl font-medium text-navy mb-2">Bids submitted!</h1>
-          <p className="text-sm text-navy opacity-50 mb-2">Your 3 choices have been submitted.</p>
+          <p className="text-sm text-navy opacity-50 mb-2">{myBand?.band_name && `${myBand.band_name} — `} Your {numChoices} have been submitted.</p>
           <p className="text-xs text-navy opacity-40 mb-6">
             Results will be announced after the bidding window closes.
           </p>
