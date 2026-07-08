@@ -79,7 +79,79 @@ function formatSgtDateTime(dateValue) {
   return `${year}-${month}-${day} ${hour}:${minute}:${second} SGT`
 }
 
+// helpers to ensure direct booking --> transform time
+const validSlotTimes = [
+  '08:00',
+  '10:00',
+  '12:00',
+  '14:00',
+  '16:00',
+  '18:00',
+  '20:00',
+  '22:00'
+]
 
+function normalizeSlotTime(slotTime) {
+  if (!slotTime) {
+    return null
+  }
+
+  const cleanedSlotTime = String(slotTime).trim().toLowerCase()
+
+  const slotTimeMap = {
+    '8:00am - 10:00am': '08:00',
+    '10:00am - 12:00pm': '10:00',
+    '12:00pm - 2:00pm': '12:00',
+    '2:00pm - 4:00pm': '14:00',
+    '4:00pm - 6:00pm': '16:00',
+    '6:00pm - 8:00pm': '18:00',
+    '8:00pm - 10:00pm': '20:00',
+    '10:00pm - 12:00am': '22:00',
+
+    '08:00': '08:00',
+    '10:00': '10:00',
+    '12:00': '12:00',
+    '14:00': '14:00',
+    '16:00': '16:00',
+    '18:00': '18:00',
+    '20:00': '20:00',
+    '22:00': '22:00',
+
+    '08:00:00': '08:00',
+    '10:00:00': '10:00',
+    '12:00:00': '12:00',
+    '14:00:00': '14:00',
+    '16:00:00': '16:00',
+    '18:00:00': '18:00',
+    '20:00:00': '20:00',
+    '22:00:00': '22:00'
+  }
+
+  return slotTimeMap[cleanedSlotTime] || null
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function parseMysqlDateOnly(dateValue) {
+  if (dateValue instanceof Date) {
+    return new Date(
+      dateValue.getFullYear(),
+      dateValue.getMonth(),
+      dateValue.getDate()
+    )
+  }
+
+  const dateString = String(dateValue).slice(0, 10)
+  const [year, month, day] = dateString.split('-').map(Number)
+
+  return new Date(year, month - 1, day)
+}
 
 
 // GET /api/band/my-bands?user_id=1
@@ -450,6 +522,223 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
     })
   })
 })
+
+
+
+
+// POST /api/band/holiday-book
+// in holiday mode, band leaders can directly book a band slot without bidding
+router.post('/holiday-book', (req, res) => {
+  const {
+    user_id,
+    band_id,
+    slot_date
+  } = req.body || {}
+
+  const slot_time = normalizeSlotTime(req.body.slot_time)
+
+  if (!user_id || !band_id || !slot_date || !req.body.slot_time) {
+    return res.status(400).json({
+      message: 'user_id, band_id, slot_date, and slot_time are required.'
+    })
+  }
+
+  if (!slot_time || !validSlotTimes.includes(slot_time)) {
+    return res.status(400).json({
+      message: 'Invalid slot time. Slot must be a valid 2-hour block.'
+    })
+  }
+
+  const parsedSlotDate = parseMysqlDateOnly(slot_date)
+
+  if (Number.isNaN(parsedSlotDate.getTime())) {
+    return res.status(400).json({
+      message: 'Invalid slot_date.'
+    })
+  }
+
+  // Step 1: check holiday mode
+  const holidaySql = `
+    SELECT setting_value
+    FROM system_settings
+    WHERE setting_key = 'holiday_mode'
+  `
+
+  db.query(holidaySql, (holidayErr, holidayResults) => {
+    if (holidayErr) {
+      console.error(holidayErr)
+      return res.status(500).json({
+        message: 'Failed to check holiday mode.'
+      })
+    }
+
+    const holidayMode = holidayResults.length > 0 &&
+      holidayResults[0].setting_value === 'true'
+
+    if (!holidayMode) {
+      return res.status(400).json({
+        message: 'Holiday mode is not enabled. Bands should use the normal bidding system.'
+      })
+    }
+
+    // Step 2: check user is approved and is leader of this band
+    const leaderSql = `
+      SELECT
+        users.id AS user_id,
+        users.status AS user_status,
+        users.role AS user_role,
+
+        bands.id AS band_id,
+        bands.name AS band_name,
+        bands.leader_user_id,
+        bands.is_active,
+        band_members.member_role
+      FROM users
+      JOIN bands
+        ON bands.id = ?
+      LEFT JOIN band_members
+        ON band_members.band_id = bands.id
+        AND band_members.user_id = users.id
+      WHERE users.id = ?
+    `
+
+    db.query(leaderSql, [band_id, user_id], (leaderErr, leaderResults) => {
+      if (leaderErr) {
+        console.error(leaderErr)
+        return res.status(500).json({
+          message: 'Failed to check band leader permission.'
+        })
+      }
+
+      if (leaderResults.length === 0) {
+        return res.status(404).json({
+          message: 'User or band not found.'
+        })
+      }
+
+      const row = leaderResults[0]
+
+      if (row.user_status !== 'approved') {
+        return res.status(403).json({
+          message: 'Only approved users can make holiday band bookings.'
+        })
+      }
+
+      if (!row.is_active) {
+        return res.status(400).json({
+          message: 'Cannot book for an inactive band.'
+        })
+      }
+
+      const isLeaderByBandTable = Number(row.leader_user_id) === Number(user_id)
+      const isLeaderByMemberTable = row.member_role === 'leader'
+
+      if (!isLeaderByBandTable && !isLeaderByMemberTable) {
+        return res.status(403).json({
+          message: 'Only the band leader can make holiday band bookings.'
+        })
+      }
+
+      // Step 3: check target slot is free
+      const checkSlotSql = `
+        SELECT id, booking_type, status
+        FROM bookings
+        WHERE slot_date = ?
+          AND slot_time = ?
+          AND status = 'confirmed'
+      `
+
+      db.query(checkSlotSql, [slot_date, slot_time], (slotErr, existingBookings) => {
+        if (slotErr) {
+          console.error(slotErr)
+          return res.status(500).json({
+            message: 'Failed to check slot availability.'
+          })
+        }
+
+        if (existingBookings.length > 0) {
+          return res.status(400).json({
+            message: 'This slot is already booked.'
+          })
+        }
+
+        const insertSql = `
+          INSERT INTO bookings
+          (
+            band_id,
+            user_id,
+            booking_type,
+            slot_category,
+            slot_date,
+            slot_time,
+            allocation_score,
+            status,
+            band_confirmation_status,
+            band_confirmation_deadline
+          )
+          VALUES (?, NULL, 'band', 'primary', ?, ?, NULL, 'confirmed', 'confirmed', NULL)
+        `
+
+        db.query(
+          insertSql,
+          [
+            band_id,
+            slot_date,
+            slot_time
+          ],
+          (insertErr, result) => {
+            if (insertErr) {
+              console.error(insertErr)
+              return res.status(500).json({
+                message: 'Failed to create holiday band booking.'
+              })
+            }
+
+            createBookingEvent(result.insertId, (calendarErr, calendarResult) => {
+              if (calendarErr) {
+                console.error('Google Calendar sync failed:', calendarErr)
+
+                return res.json({
+                  message: 'Holiday band booking confirmed, but Google Calendar sync failed.',
+                  booking_id: result.insertId,
+                  band_id,
+                  band_name: row.band_name,
+                  booking_type: 'band',
+                  slot_category: 'primary',
+                  status: 'confirmed',
+                  band_confirmation_status: 'confirmed',
+                  slot_time,
+                  calendar_sync_status: 'failed'
+                })
+              }
+
+              notifications.notifySlotConfirmed(band_id, slot_date, slot_time)
+
+              return res.json({
+                message: 'Holiday band booking confirmed successfully.',
+                booking_id: result.insertId,
+                band_id,
+                band_name: row.band_name,
+                booking_type: 'band',
+                slot_category: 'primary',
+                status: 'confirmed',
+                band_confirmation_status: 'confirmed',
+                slot_date,
+                slot_time,
+                calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+                google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+                google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+              })
+            })
+          }
+        )
+      })
+    })
+  })
+})
+
+
+
 
 
 // POST /api/band/confirm-booking

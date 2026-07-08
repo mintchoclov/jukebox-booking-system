@@ -171,6 +171,90 @@ function cleanEditableName(value) {
   return String(value || '').trim()
 }
 
+// GET /api/admin/holiday-mode
+// frontend can use this api to decide whether to hide bidding options.
+router.get('/holiday-mode', (req, res) => {
+  const sql = `
+    SELECT setting_value, updated_at
+    FROM system_settings
+    WHERE setting_key = 'holiday_mode'
+  `
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to fetch holiday mode.'
+      })
+    }
+
+    const value = results.length > 0
+      ? results[0].setting_value
+      : 'false'
+
+    return res.json({
+      holiday_mode: value === 'true',
+      setting_value: value,
+      updated_at: results.length > 0 ? results[0].updated_at : null
+    })
+  })
+})
+
+
+// POST /api/admin/set-holiday-mode
+// Admin turns holiday mode on/off
+// holiday mode is on, band leaders can directly book slots WITHOUT bidding
+router.post('/set-holiday-mode', (req, res) => {
+  const {
+    admin_user_id,
+    enabled
+  } = req.body || {}
+
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({
+      message: 'enabled must be true or false.'
+    })
+  }
+
+  checkApprovedAdmin(admin_user_id, (adminErr, ok, statusCode, message) => {
+    if (adminErr) {
+      return res.status(500).json({
+        message: 'Failed to check admin permission.'
+      })
+    }
+
+    if (!ok) {
+      return res.status(statusCode).json({ message })
+    }
+
+    const value = enabled ? 'true' : 'false'
+
+    const sql = `
+      INSERT INTO system_settings
+      (setting_key, setting_value)
+      VALUES ('holiday_mode', ?)
+      ON DUPLICATE KEY UPDATE
+        setting_value = VALUES(setting_value),
+        updated_at = CURRENT_TIMESTAMP
+    `
+
+    db.query(sql, [value], (err) => {
+      if (err) {
+        console.error(err)
+        return res.status(500).json({
+          message: 'Failed to update holiday mode.'
+        })
+      }
+
+      return res.json({
+        message: enabled
+          ? 'Holiday mode enabled successfully!'
+          : 'Holiday mode disabled successfully!',
+        holiday_mode: enabled
+      })
+    })
+  })
+})
 
 
 
