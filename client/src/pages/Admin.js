@@ -9,6 +9,7 @@ import SlotGrid from '../components/Slotgrid'
 import { getWeekDates, getBookingDateStr, getDateStr } from '../components/dateutils'
 import { biddingSlotStyles, biddingLegendItems, DAYS, TIMES, TIME_VALS, TIME_SLOTS } from '../components/calendarstyle'
 import SettingsTab from '../components/SettingsTab'
+import HumidifierTab, { useShowHumidifierTab } from '../components/HumidifierTab'
 
 function Admin({ user, effectsProps }) {
   const navigate = useNavigate()
@@ -43,9 +44,11 @@ function Admin({ user, effectsProps }) {
   const [expandedBand, setExpandedBand] = useState(null)
   const [editingBand, setEditingBand] = useState(null)
   const [editBandTypeValue, setEditBandTypeValue] = useState('standard')
+  const [holidayMode, setHolidayMode] = useState(false)
 
   const weekDates = getWeekDates(weekOffset)
   const bookingsWeekDates = getWeekDates(bookingsWeekOffset)
+  const showHumidifier = useShowHumidifierTab(user.id, 'admin') 
 
   function getNextBiddingWeekMonday() {
     const now = new Date()
@@ -122,7 +125,11 @@ function Admin({ user, effectsProps }) {
       .then(res => res.json())
       .then(data => setAllUsers(Array.isArray(data) ? data : []))
       .catch(() => {})
-
+    fetch(`${API_URL}/api/admin/holiday-mode`)
+      .then(res => res.json())
+      .then(data => setHolidayMode(data.holiday_mode))
+      .catch(() => { })
+      
     fetchBands()
 
     const weekStart = getNextBiddingWeekMonday()
@@ -470,8 +477,7 @@ function Admin({ user, effectsProps }) {
     navigate('/login')
   }
   const isAdminLeader = myBands.some(b => b.is_leader || b.member_role === 'leader')
-  const tabs = ['overview', 'bookings', 'bidding', 'users', 'my booking', ...(isAdminLeader ? ['my bands'] : []), 'settings']
-
+  const tabs = ['overview', 'bookings', ...(holidayMode ? [] : ['bidding']), 'users', 'my booking', ...(isAdminLeader ? ['my bands'] : []), ...(showHumidifier ? ['humidifier'] : []), 'settings']
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-navy opacity-50 text-sm">Loading...</p>
@@ -1488,6 +1494,10 @@ function Admin({ user, effectsProps }) {
             )
           })()}
 
+          {activeTab === 'humidifier' && (
+            <HumidifierTab userId={user.id} userRole="admin" myBands={[]} />
+          )}
+
           {/* ===== SETTINGS ===== */}
           {activeTab === 'settings' && (
             <div>
@@ -1514,6 +1524,35 @@ function Admin({ user, effectsProps }) {
                     <p className="text-xs text-navy opacity-50 mt-1">Thursday 12:00pm</p>
                   </div>
                   <Badge>Fixed</Badge>
+                </Card>
+              </div>
+              <SectionLabel>Holiday mode</SectionLabel>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                <Card className="p-4 flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-medium text-navy">Holiday mode</p>
+                    <p className="text-xs text-navy opacity-50 mt-1">
+                      {holidayMode
+                        ? 'Active — bands can book directly without bidding'
+                        : 'Off — normal bidding system active'}
+                    </p>
+                  </div>
+                  <Button
+                    variant={holidayMode ? 'danger' : 'primary'}
+                    className="px-3 py-1 text-xs ml-3"
+                    onClick={() => {
+                      fetch(`${API_URL}/api/admin/set-holiday-mode`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ admin_user_id: user.id, enabled: !holidayMode })
+                      })
+                        .then(res => res.json())
+                        .then(data => setHolidayMode(data.holiday_mode))
+                        .catch(() => { })
+                    }}
+                  >
+                    {holidayMode ? 'Disable' : 'Enable'}
+                  </Button>
                 </Card>
               </div>
 

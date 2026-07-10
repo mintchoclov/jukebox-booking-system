@@ -147,6 +147,11 @@ function AdminDehumidifierMissing(chatId, username, slotDate) {
     `⚠️ <b>Missing Dehumidifier Photo!</b>\n\nThe last user <b>${username}</b> on <b>${slotDate}</b> has not submitted a dehumidifier photo after 30 minutes.\n\nPlease follow up!`)
 }
 
+function HumidifierFlagged(chatId, name, slotDate, slotTime) {
+  sendMessage(chatId,
+    `⚠️ <b>Humidifier Photo Flagged!</b>\n\nHi ${name}, admin has flagged your humidifier photo for <b>${slotDate} ${slotTime}</b> as incorrect.\n\nPlease log in and replace it with a clearer photo. Thank you! 🎸`)
+}
+
 function AdminNewUserPending(chatId, username, email) {
   sendMessage(chatId,
     `🔔 <b>New User Pending Approval!</b>\n\n<b>${username}</b> (${email}) has just signed up and is waiting for approval.\n\nPlease log in to the admin panel to approve or reject.`)
@@ -173,5 +178,6 @@ module.exports = {
   PoolSlotAvailable,
   IndividualBookingConfirmed,
   DayBeforeReminder,
-  BookingCancelled
+  BookingCancelled,
+  HumidifierFlagged
 }

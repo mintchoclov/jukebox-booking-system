@@ -5,6 +5,7 @@ import Mascot from '../assets/mascot.svg'
 import { Card, Button, Spinner, Badge, SectionLabel, FormError } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
 import SettingsTab from '../components/SettingsTab'
+import HumidifierTab, { useShowHumidifierTab } from '../components/HumidifierTab'
 
 function getNextBiddingWeekMonday() {
   const now = new Date()
@@ -39,6 +40,8 @@ function Leader({ user, effectsProps }) {
   const [loading, setLoading] = useState(true)
   const [actionError, setActionError] = useState('')
   const [me, setMe] = useState(user)
+  const showHumidifier = useShowHumidifierTab(user.id, 'band')
+  const [holidayMode, setHolidayMode] = useState(false)
 
   useEffect(() => {
     function refreshMe() {
@@ -50,6 +53,10 @@ function Leader({ user, effectsProps }) {
             setMe(data)
           }
         })
+        .catch(() => { })
+      fetch(`${API_URL}/api/admin/holiday-mode`)
+        .then(res => res.json())
+        .then(data => setHolidayMode(data.holiday_mode))
         .catch(() => { })
     }
 
@@ -199,14 +206,14 @@ function Leader({ user, effectsProps }) {
 
         {/* tab bar */}
         <div className="flex bg-cream border border-beige rounded-2xl p-1 mb-6">
-          {['home', 'settings'].map(tab => (
+          {['home', ...(showHumidifier ? ['humidifier'] : []), 'settings'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 text-xs font-medium py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-white text-navy shadow-sm' : 'text-navy opacity-40'
                 }`}
             >
-              {tab === 'home' ? '🏠 Home' : '⚙️ Settings'}
+              {tab === 'home' ? '🏠 Home' : tab === 'humidifier' ? '💧 Humidifier' : '⚙️ Settings'}
             </button>
           ))}
         </div>
@@ -311,63 +318,82 @@ function Leader({ user, effectsProps }) {
               )}
             </Card>
 
-        {/* bidding status */}
-            <Card className="p-5 mb-4">
-              <SectionLabel>Next week bidding</SectionLabel>
-              {!biddingOpen ? (
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-sm font-medium text-navy">Bidding not open yet</p>
-                    <p className="text-xs text-navy opacity-50 mt-1">Admin hasn't opened it yet</p>
-                  </div>
-                  <Badge>Closed 🔒</Badge>
-                </div>
-              ) : leaderBands.length > 1 ? (
-                // NEW: 2-column grid, one per band, each with its own submit button linking to /bidding?band_id=X
-                <div>
-                  <p className="text-xs text-navy opacity-50 mb-3">Deadline: {getNextBiddingDeadline()} 12pm</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {leaderBands.map(band => {
-                      const submitted = bandBidsSubmitted(band.band_id)
-                      return (
-                        <div key={band.band_id} className="bg-primarySoft rounded-xl p-3">
-                          <p className="text-xs text-navy opacity-50 mb-2">{band.band_name}</p>
-                          <Badge variant={submitted ? 'success' : 'pink'} style={{ fontSize: '9px', display: 'block', marginBottom: '8px' }}>
-                            {submitted ? 'Done ✓' : 'Pending !'}
-                          </Badge>
-                          <button
-                            onClick={() => navigate(`/bidding?band_id=${band.band_id}`)}
-                            className="w-full text-xs bg-primary text-navy px-2 py-1.5 rounded-lg font-medium"
-                          >
-                            {submitted ? '✏️ Edit' : '🎸 Submit'}
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ) : (
-                // single band — original layout
-                <div className="flex justify-between items-center">
-                  <div>
-                    {bandBidsSubmitted(leaderBands[0]?.band_id) ? (
-                      <><p className="text-sm font-medium text-navy">Bids submitted ✓</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
-                    ) : (
-                      <><p className="text-sm font-medium text-navy">Bids not submitted yet!</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
-                    )}
-                  </div>
-                  <Badge variant={bandBidsSubmitted(leaderBands[0]?.band_id) ? 'primary' : 'pink'}>
-                    {bandBidsSubmitted(leaderBands[0]?.band_id) ? 'Done ✓' : 'Pending !'}
-                  </Badge>
-                </div>
-              )}
-            </Card>
-            {/* NEW: single band submit button — only shown when leading exactly one band */}
-            {biddingOpen && leaderBands.length === 1 && (
-              <Button variant="primary" className="w-full mb-3"
-                onClick={() => navigate(`/bidding?band_id=${leaderBands[0]?.band_id}`)}>
-                {bandBidsSubmitted(leaderBands[0]?.band_id) ? '✏️ Edit Band Bids' : '🎸 Submit Band Bids'}
-              </Button>
+            {/* bidding status */}
+            {!holidayMode && (
+              <>
+                <Card className="p-5 mb-4">
+                  <SectionLabel>Next week bidding</SectionLabel>
+                  {!biddingOpen ? (
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium text-navy">Bidding not open yet</p>
+                        <p className="text-xs text-navy opacity-50 mt-1">Admin hasn't opened it yet</p>
+                      </div>
+                      <Badge>Closed 🔒</Badge>
+                    </div>
+                  ) : leaderBands.length > 1 ? (
+                    <div>
+                      <p className="text-xs text-navy opacity-50 mb-3">Deadline: {getNextBiddingDeadline()} 12pm</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {leaderBands.map(band => {
+                          const submitted = bandBidsSubmitted(band.band_id)
+                          return (
+                            <div key={band.band_id} className="bg-primarySoft rounded-xl p-3">
+                              <p className="text-xs text-navy opacity-50 mb-2">{band.band_name}</p>
+                              <Badge variant={submitted ? 'success' : 'pink'} style={{ fontSize: '9px', display: 'block', marginBottom: '8px' }}>
+                                {submitted ? 'Done ✓' : 'Pending !'}
+                              </Badge>
+                              <button
+                                onClick={() => navigate(`/bidding?band_id=${band.band_id}`)}
+                                className="w-full text-xs bg-primary text-navy px-2 py-1.5 rounded-lg font-medium"
+                              >
+                                {submitted ? '✏️ Edit' : '🎸 Submit'}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <div>
+                        {bandBidsSubmitted(leaderBands[0]?.band_id) ? (
+                          <><p className="text-sm font-medium text-navy">Bids submitted ✓</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
+                        ) : (
+                          <><p className="text-sm font-medium text-navy">Bids not submitted yet!</p><p className="text-xs text-navy opacity-50 mt-1">Deadline: {getNextBiddingDeadline()} 12pm</p></>
+                        )}
+                      </div>
+                      <Badge variant={bandBidsSubmitted(leaderBands[0]?.band_id) ? 'primary' : 'pink'}>
+                        {bandBidsSubmitted(leaderBands[0]?.band_id) ? 'Done ✓' : 'Pending !'}
+                      </Badge>
+                    </div>
+                  )}
+                </Card>
+                {biddingOpen && leaderBands.length === 1 && (
+                  <Button variant="primary" className="w-full mb-3"
+                    onClick={() => navigate(`/bidding?band_id=${leaderBands[0]?.band_id}`)}>
+                    {bandBidsSubmitted(leaderBands[0]?.band_id) ? '✏️ Edit Band Bids' : '🎸 Submit Band Bids'}
+                  </Button>
+                )}
+              </>
+            )}
+
+            {holidayMode && (
+              <Card className="p-5 mb-4">
+                <SectionLabel>Holiday booking</SectionLabel>
+                <p className="text-xs text-navy opacity-50 mb-3">
+                  Holiday mode is active — book slots directly without bidding or confirmation needed.
+                </p>
+                {leaderBands.map(band => (
+                  <button
+                    key={band.band_id}
+                    onClick={() => navigate(`/calendar?band_id=${band.band_id}&holiday=true`)}
+                    className="w-full text-xs bg-primary text-navy px-3 py-2 rounded-xl font-medium mb-2"
+                  >
+                    🎸 Book slot for {band.band_name}
+                  </button>
+                ))}
+              </Card>
             )}
 
             <Button variant="secondary" className="w-full mb-3" onClick={() => navigate('/calendar')}>
@@ -392,6 +418,9 @@ function Leader({ user, effectsProps }) {
           />
         )}
 
+        {activeTab === 'humidifier' && (
+          <HumidifierTab userId={user.id} userRole="band" myBands={myBands} />
+        )}
       </div>
     </div>
   )

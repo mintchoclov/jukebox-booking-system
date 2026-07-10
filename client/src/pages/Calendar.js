@@ -27,6 +27,10 @@ function Calendar() {
   const [cancelSuccess, setCancelSuccess] = useState(false)
   const [notes, setNotes] = useState('')
 
+  const params = new URLSearchParams(window.location.search)
+  const isHoliday = params.get('holiday') === 'true'
+  const holidayBandId = params.get('band_id')
+
   useEffect(() => {
     if (!user || !user.id) {
       navigate('/login')
@@ -125,6 +129,40 @@ function Calendar() {
     if (Number(booking.user_id) === Number(user.id)) return false
     if (!booking.date) return false
     return !hasPrimaryThisWeek(booking.date)
+  }
+
+  function handleHolidayBook() {
+    if (!selectedAvailableSlot) return
+    setBookingLoading(true)
+    setBookingError('')
+
+    fetch(`${API_URL}/api/band/holiday-book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: user.id,
+        band_id: holidayBandId,
+        slot_date: getDateStr(selectedAvailableSlot.date),
+        slot_time: selectedAvailableSlot.time,
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setBookingLoading(false)
+        if (data.message?.toLowerCase().includes('success')) {
+          setBookingSuccess(true)
+          setSelectedAvailableSlot(null)
+          fetchBookings()
+        } else {
+          setBookingError(data.message || 'Failed to book slot')
+          triggerShake()
+        }
+      })
+      .catch(() => {
+        setBookingLoading(false)
+        setBookingError('Something went wrong')
+        triggerShake()
+      })
   }
 
   function handleSlotClick(di, ti) {
@@ -283,6 +321,15 @@ function Calendar() {
             </div>
           </div>
         </Card>
+        
+        {isHoliday && (
+          <Card className="p-4 mb-4 bg-primarySoft">
+            <p className="text-sm font-medium text-navy">🎉 Holiday booking mode</p>
+            <p className="text-xs text-navy opacity-60 mt-1">
+              Click any available slot to book it directly for your band. No bidding needed!
+            </p>
+          </Card>
+        )}
 
         {/* slot detail panel */}
         {selectedSlot && (
@@ -389,6 +436,7 @@ function Calendar() {
                 {TIME_SLOTS.find(t => t.value === selectedAvailableSlot.time)?.label}
               </p>
             </div>
+            {!isHoliday && (
             <div className="mb-4">
               <p className="text-xs font-medium text-navy mb-2">Slot type</p>
               <div className="flex gap-2">
@@ -415,6 +463,8 @@ function Calendar() {
                   : 'Additional slot — requires a primary slot first'}
               </p>
             </div>
+            )}
+            {!isHoliday && (
             <div className="mb-4">
               <p className="text-xs font-medium text-navy mb-2">Notes <span className="text-navy font-normal">(optional)</span></p>
               <textarea
@@ -427,6 +477,7 @@ function Calendar() {
               />
               <p className="text-xs text-navy text-right mt-1">{notes.length}/500</p>
             </div>
+            )}
             <ErrorText>{bookingError}</ErrorText>
             {bookingSuccess && (
               <p className="text-successText text-xs mb-3">Slot booked! 🎵</p>
@@ -434,10 +485,10 @@ function Calendar() {
             <Button
               variant="primary"
               className="w-full flex items-center justify-center gap-2"
-              onClick={handleBook}
+              onClick={isHoliday ? handleHolidayBook : handleBook}
               disabled={bookingLoading}
             >
-              {bookingLoading ? <><Spinner /> Booking...</> : 'Confirm Booking'}
+              {bookingLoading ? <><Spinner /> Booking...</> : isHoliday ? 'Book Band Slot' : 'Confirm Booking'}
             </Button>
           </Card>
         )}

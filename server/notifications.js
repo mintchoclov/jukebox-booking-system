@@ -248,6 +248,36 @@ function notifyAccountApproved(userId) {
 }
 
 // admin notifs
+function notifyHumidifierFlagged(userId, bandId, slotDate, slotTime) {
+  if (!isTelegramEnabled()) return
+
+  if (bandId) {
+    const sql = `
+      SELECT u.telegram_chat_id, b.name as band_name
+      FROM users u
+      JOIN bands b ON u.id = b.leader_user_id
+      WHERE b.id = ? AND u.telegram_chat_id IS NOT NULL
+    `
+    db.query(sql, [bandId], (err, results) => {
+      if (err) return console.error(err)
+      results.forEach(leader => {
+        bot.HumidifierFlagged(leader.telegram_chat_id, leader.band_name, slotDate, slotTime)
+      })
+    })
+  } else {
+    const sql = `
+      SELECT telegram_chat_id, username
+      FROM users
+      WHERE id = ? AND telegram_chat_id IS NOT NULL
+    `
+    db.query(sql, [userId], (err, results) => {
+      if (err) return console.error(err)
+      results.forEach(user => {
+        bot.HumidifierFlagged(user.telegram_chat_id, user.username, slotDate, slotTime)
+      })
+    })
+  }
+}
 function notifyAdminSlotReleased(slotDate, slotTime, bandId) {
   if (!isTelegramEnabled()) return
 
@@ -425,5 +455,6 @@ module.exports = {
   notifyIndividualBookingConfirmed,
   notifyBookingCancelled,
   notifyDayBeforeReminder,
-  notifyPoolSlotAvailable
+  notifyPoolSlotAvailable,
+  notifyHumidifierFlagged
 }

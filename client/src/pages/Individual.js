@@ -5,6 +5,7 @@ import Mascot from '../assets/mascot.svg'
 import { Card, Button, Badge, SectionLabel } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
 import SettingsTab from '../components/SettingsTab'
+import HumidifierTab, { useShowHumidifierTab } from '../components/HumidifierTab'
 
 function Individual({ user, effectsProps }) {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ function Individual({ user, effectsProps }) {
   const [bandBookings, setBandBookings] = useState([])
   const [me, setMe] = useState(user)
   const [loading, setLoading] = useState(true)
+  const showHumidifier = useShowHumidifierTab(user.id, 'individual')
 
   useEffect(() => {
     function refreshMe() {
@@ -110,14 +112,14 @@ function Individual({ user, effectsProps }) {
 
         {/* tab bar */}
         <div className="flex bg-cream border border-beige rounded-2xl p-1 mb-6">
-          {['home', 'settings'].map(tab => (
+          {['home', ...(showHumidifier ? ['humidifier'] : []), 'settings'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 text-xs font-medium py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-white text-navy shadow-sm' : 'text-navy opacity-40'
                 }`}
             >
-              {tab === 'home' ? '🏠 Home' : '⚙️ Settings'}
+              {tab === 'home' ? '🏠 Home' : tab === 'humidifier' ? '💧 Humidifier' : '⚙️ Settings'}
             </button>
           ))}
         </div>
@@ -220,6 +222,10 @@ function Individual({ user, effectsProps }) {
             onLogout={handleLogout}
             onUsernameChange={newName => setMe(prev => ({ ...prev, username: newName }))}
           />
+        )}
+
+        {activeTab === 'humidifier' && (
+          <HumidifierTab userId={user.id} userRole="individual" myBands={myBands} />
         )}
 
           </div>

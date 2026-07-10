@@ -390,7 +390,10 @@ router.get('/my-bookings', (req, res) => {
       bookings.band_confirmed_at,
       bookings.released_at,
       bookings.release_reason,
-      bookings.created_at
+      bookings.created_at,
+      bookings.humidifier_photo_url,
+      bookings.humidifier_photo_uploaded_at,
+      bookings.humidifier_flagged
     FROM band_members
     JOIN bands
       ON band_members.band_id = bands.id
@@ -417,6 +420,25 @@ router.get('/my-bookings', (req, res) => {
 
 // POST /api/band/upload-humidifier-photo
 // A band member or band leader uploads humidifier photo for a band booking.
+router.post('/delete-humidifier-photo', (req, res) => {
+  const { user_id, booking_id } = req.body
+  if (!user_id || !booking_id) return res.status(400).json({ message: 'user_id and booking_id required.' })
+  const sql = `
+    UPDATE bookings
+    SET
+    humidifier_photo_url = NULL,
+    humidifier_photo_uploaded_at = NULL,
+    humidifier_flagged = 0
+    WHERE id = ?
+    AND booking_type = 'band'
+  `
+  db.query(sql, [booking_id], (err, result) => {
+    if (err) return res.status(500).json({ message: 'Failed to delete photo.' })
+    if (result.affectedRows === 0) return res.status(404).json({ message: 'Booking not found.' })
+    res.json({ message: 'Photo deleted.' })
+  })
+})
+
 router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
   const {
     user_id,
@@ -495,13 +517,14 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
     const photoUrl = buildHumidifierPhotoUrl(req.file)
 
     const updateSql = `
-      UPDATE bookings
-      SET
-        humidifier_photo_url = ?,
-        humidifier_photo_uploaded_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-        AND booking_type = 'band'
-    `
+  UPDATE bookings
+  SET
+    humidifier_photo_url = ?,
+    humidifier_photo_uploaded_at = CURRENT_TIMESTAMP,
+    humidifier_flagged = 0
+  WHERE id = ?
+    AND booking_type = 'band'
+`
 
     db.query(updateSql, [photoUrl, booking_id], (updateErr) => {
       if (updateErr) {

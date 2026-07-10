@@ -548,7 +548,7 @@ router.get('/view-my-bookings', (req, res) => {
         SELECT
             id,
             user_id,
-            booking_type,
+             booking_type,
             slot_category,
             slot_date,
             slot_time,
@@ -556,6 +556,7 @@ router.get('/view-my-bookings', (req, res) => {
             notes,
             humidifier_photo_url,
             humidifier_photo_uploaded_at,
+            humidifier_flagged,
             cancel_reason,
             cancelled_at,
             is_late_cancellation,
@@ -952,6 +953,27 @@ router.post('/edit-username', (req, res) => {
 // POST /api/individual/upload-humidifier-photo
 // Individual user uploads humidifier photo for their own self-practice booking
 // band's photo is inside bandRoutes
+
+router.post('/delete-humidifier-photo', (req, res) => {
+    const { user_id, booking_id } = req.body
+    if (!user_id || !booking_id) return res.status(400).json({ message: 'user_id and booking_id required.' })
+    const sql = `
+    UPDATE bookings
+    SET
+    humidifier_photo_url = NULL,
+    humidifier_photo_uploaded_at = NULL,
+    humidifier_flagged = 0
+    WHERE id = ?
+    AND user_id = ? 
+    AND booking_type = 'individual'
+  `
+    db.query(sql, [booking_id, user_id], (err, result) => {
+        if (err) return res.status(500).json({ message: 'Failed to delete photo.' })
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Booking not found.' })
+        res.json({ message: 'Photo deleted.' })
+    })
+})
+
 router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
     const {
         user_id,
@@ -971,19 +993,16 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
         })
     }
 
-    const findSql = `
-        SELECT
-            id,
-            user_id,
-            booking_type,
-            status,
-            slot_date,
-            slot_time,
-            humidifier_photo_url
-        FROM bookings
-        WHERE id = ?
-          AND booking_type = 'individual'
-    `
+    const updateSql = `
+    UPDATE bookings
+    SET
+        humidifier_photo_url = ?,
+        humidifier_photo_uploaded_at = CURRENT_TIMESTAMP,
+        humidifier_flagged = 0
+    WHERE id = ?
+      AND user_id = ?
+      AND booking_type = 'individual'
+`
 
     db.query(findSql, [booking_id], (findErr, results) => {
         if (findErr) {
