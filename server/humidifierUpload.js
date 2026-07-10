@@ -1,6 +1,3 @@
-// This file is for the humidifier photo-upload feature
-// user of the last slot upload the status of humidifier inside bandroom
-
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')

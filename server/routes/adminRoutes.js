@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const notifications = require('../notifications')
 
 
 // date helpers used by adminRoutes
@@ -1444,6 +1445,7 @@ router.get('/bookings', (req, res) => {
         bookings.notes,
         bookings.humidifier_photo_url,
         bookings.humidifier_photo_uploaded_at,
+        bookings.humidifier_flagged,
         bookings.created_at
       FROM bookings
       LEFT JOIN bands ON bookings.band_id = bands.id
@@ -1466,6 +1468,57 @@ router.get('/bookings', (req, res) => {
 
 
 
+router.post('/remind', (req, res) => {
+  const { booking_id, admin_user_id, reason } = req.body
+
+  if (!booking_id) {
+    return res.status(400).json({ message: 'booking_id is required.' })
+  }
+  const sql = `
+    SELECT b.id, b.user_id, b.slot_date, b.slot_time, b.booking_type, b.band_id
+    FROM bookings b
+    WHERE b.id = ?
+  `
+
+  db.query(sql, [booking_id], (err, results) => {
+    if (err) return res.status(500).json({ message: 'Failed to find booking.' })
+    if (results.length === 0) return res.status(404).json({ message: 'Booking not found.' })
+
+    const booking = results[0]
+
+    if (reason === 'flag') {
+      db.query('UPDATE bookings SET humidifier_flagged = 1 WHERE id = ?', [booking_id])
+      try {
+        const targetUserId = booking.booking_type === 'band' ? null : booking.user_id
+        const targetBandId = booking.booking_type === 'band' ? booking.band_id : null
+
+        if (booking.booking_type === 'band') {
+          notifications.notifyHumidifierFlagged
+            ? notifications.notifyHumidifierFlagged(targetBandId, booking.slot_date, booking.slot_time)
+            : notifications.notifySlotConfirmed(targetBandId, booking.slot_date, booking.slot_time)
+        } else {
+          notifications.notifyHumidifierFlagged
+            ? notifications.notifyHumidifierFlagged(targetUserId, booking.slot_date, booking.slot_time)
+            : notifications.notifyIndividualBookingConfirmed(targetUserId, booking.slot_date, booking.slot_time, 'primary')
+        }
+      } catch (e) {
+        console.error('Notification error:', e)
+      }
+    } else {
+      try {
+        if (booking.booking_type === 'band') {
+          notifications.notifySlotConfirmed(booking.band_id, booking.slot_date, booking.slot_time)
+        } else {
+          notifications.notifyIndividualBookingConfirmed(booking.user_id, booking.slot_date, booking.slot_time, 'primary')
+        }
+      } catch (e) {
+        console.error('Notification error:', e)
+      }
+    }
+
+    res.json({ message: 'Reminder sent.' })
+  })
+})
 
 
 // admin updates user role
