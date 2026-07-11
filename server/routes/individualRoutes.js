@@ -993,16 +993,19 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
         })
     }
 
-    const updateSql = `
-    UPDATE bookings
-    SET
-        humidifier_photo_url = ?,
-        humidifier_photo_uploaded_at = CURRENT_TIMESTAMP,
-        humidifier_flagged = 0
-    WHERE id = ?
-      AND user_id = ?
-      AND booking_type = 'individual'
-`
+    const findSql = `
+        SELECT
+            id,
+            user_id,
+            booking_type,
+            status,
+            slot_date,
+            slot_time,
+            humidifier_photo_url
+        FROM bookings
+        WHERE id = ?
+          AND booking_type = 'individual'
+    `
 
     db.query(findSql, [booking_id], (findErr, results) => {
         if (findErr) {
@@ -1042,7 +1045,8 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
             UPDATE bookings
             SET
                 humidifier_photo_url = ?,
-                humidifier_photo_uploaded_at = CURRENT_TIMESTAMP
+                humidifier_photo_uploaded_at = CURRENT_TIMESTAMP,
+                humidifier_flagged = 0
             WHERE id = ?
               AND user_id = ?
               AND booking_type = 'individual'
