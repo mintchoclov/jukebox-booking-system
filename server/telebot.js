@@ -152,6 +152,11 @@ function HumidifierFlagged(chatId, name, slotDate, slotTime) {
     `⚠️ <b>Humidifier Photo Flagged!</b>\n\nHi ${name}, admin has flagged your humidifier photo for <b>${slotDate} ${slotTime}</b> as incorrect.\n\nPlease log in and replace it with a clearer photo. Thank you! 🎸`)
 }
 
+function BidLost(chatId, bandName, slotDate, slotTime, reason) {
+  sendMessage(chatId,
+    `❌ <b>Bid Not Successful</b>\n\nHi ${bandName}, your bid for <b>${slotDate} ${slotTime}</b> was unsuccessful.\n\nReason: <b>${reason}</b>\n\nBetter luck next week! 🎸`)
+}
+
 function AdminNewUserPending(chatId, username, email) {
   sendMessage(chatId,
     `🔔 <b>New User Pending Approval!</b>\n\n<b>${username}</b> (${email}) has just signed up and is waiting for approval.\n\nPlease log in to the admin panel to approve or reject.`)
@@ -179,5 +184,6 @@ module.exports = {
   IndividualBookingConfirmed,
   DayBeforeReminder,
   BookingCancelled,
-  HumidifierFlagged
+  HumidifierFlagged,
+  BidLost
 }

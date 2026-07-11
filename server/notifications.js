@@ -436,6 +436,23 @@ function notifyPoolSlotAvailable(slotDate, slotTime) {
   })
 }
 
+function notifyBidLost(bandId, slotDate, slotTime, reason) {
+  if (!isTelegramEnabled()) return
+
+  const sql = `
+    SELECT u.telegram_chat_id, b.name AS band_name
+    FROM users u
+    JOIN bands b ON u.id = b.leader_user_id
+    WHERE b.id = ? AND u.telegram_chat_id IS NOT NULL
+  `
+  db.query(sql, [bandId], (err, results) => {
+    if (err) return console.error(err)
+    results.forEach(leader => {
+      bot.BidLost(leader.telegram_chat_id, leader.band_name, slotDate, slotTime, reason)
+    })
+  })
+}
+
 module.exports = {
   notifyBiddingOpen,
   notifyBiddingDeadlineReminder,
@@ -456,5 +473,6 @@ module.exports = {
   notifyBookingCancelled,
   notifyDayBeforeReminder,
   notifyPoolSlotAvailable,
-  notifyHumidifierFlagged
+  notifyHumidifierFlagged,
+  notifyBidLost
 }
