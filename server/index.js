@@ -15,6 +15,15 @@ app.use(express.json());
 const teleToken = process.env.TELEGRAMBOT_TOKEN;
 const { bot }  = require('./telebot');
 
+app.use(cors({
+  origin: true,
+  credentials: true
+}))
+
+app.get('/api/ping', (req, res) => {
+  res.json({ ok: true })
+})
+
 app.post(`/bot${teleToken}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
@@ -24,10 +33,6 @@ if (process.env.ENABLE_SCHEDULE_JOBS === 'true') {
   require('./schedule')
 }
 
-app.use(cors({
-  origin: true,
-  credentials: true
-}))
 
 // url of photo uploaded will be like: /uploads/humidifier/xxx.jpg
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')))

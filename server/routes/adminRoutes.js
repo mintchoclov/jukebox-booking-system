@@ -704,6 +704,7 @@ router.post('/run-allocation', (req, res) => {
             score: bid.effective_bid_value
           })),
           skipped_bands: skippedBecauseMaxSlots
+          
         })
 
         return
@@ -761,8 +762,15 @@ router.post('/run-allocation', (req, res) => {
           score: bid.effective_bid_value
         })),
 
-        skipped_bands: skippedBecauseMaxSlots
-      })
+        skipped_bands: skippedBecauseMaxSlots,
+
+         all_bids: slot.all_bids.map((bid) => ({
+           band_id: bid.band_id,
+           band_name: bid.band_name,
+           preference_rank: bid.preference_rank,
+           score: bid.effective_bid_value
+      }))
+    })
     })
 
     saveAllocationResults(bidResultUpdates, (saveErr) => {
@@ -772,7 +780,19 @@ router.post('/run-allocation', (req, res) => {
           message: 'Allocation calculated, but failed to save bid rejection reasons.'
         })
       }
+      const losingUpdates = bidResultUpdates.filter(u => u.allocation_status === 'lost')
 
+      losingUpdates.forEach((update) => {
+        const matchingBid = bids.find(b => Number(b.bid_id) === Number(update.bid_id))
+        if (!matchingBid) return
+
+        notifications.notifyBidLost(
+          matchingBid.band_id,
+          matchingBid.slot_date,
+          matchingBid.slot_time,
+          update.reject_reason
+        )
+      })
       return res.json(response)
     })
   })
@@ -1658,13 +1678,9 @@ router.post('/remind', (req, res) => {
         const targetBandId = booking.booking_type === 'band' ? booking.band_id : null
 
         if (booking.booking_type === 'band') {
-          notifications.notifyHumidifierFlagged
-            ? notifications.notifyHumidifierFlagged(targetBandId, booking.slot_date, booking.slot_time)
-            : notifications.notifySlotConfirmed(targetBandId, booking.slot_date, booking.slot_time)
+          notifications.notifyHumidifierFlagged(null, booking.band_id, booking.slot_date, booking.slot_time)
         } else {
-          notifications.notifyHumidifierFlagged
-            ? notifications.notifyHumidifierFlagged(targetUserId, booking.slot_date, booking.slot_time)
-            : notifications.notifyIndividualBookingConfirmed(targetUserId, booking.slot_date, booking.slot_time, 'primary')
+          notifications.notifyHumidifierFlagged(booking.user_id, null, booking.slot_date, booking.slot_time)
         }
       } catch (e) {
         console.error('Notification error:', e)
