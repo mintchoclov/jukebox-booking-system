@@ -26,6 +26,7 @@ function Calendar() {
   const [cancelLoading, setCancelLoading] = useState(false)
   const [cancelSuccess, setCancelSuccess] = useState(false)
   const [notes, setNotes] = useState('')
+  const [holidayMode, setHolidayMode] = useState(false)
 
   const params = new URLSearchParams(window.location.search)
   const isHoliday = params.get('holiday') === 'true'
@@ -48,6 +49,10 @@ function Calendar() {
         setLoading(false)
       })
       .catch(() => setLoading(false))
+    fetch(`${API_URL}/api/admin/holiday-mode`)
+      .then(res => res.json())
+      .then(data => setHolidayMode(data.holiday_mode))
+      .catch(() => { })
   }
 
   function fetchMyBookings() {
@@ -72,12 +77,12 @@ function Calendar() {
     const date = weekDates[di]
     const time = TIME_SLOTS[ti].value
     const booking = getSlotBooking(date, time)
-    if (!booking) {
-      if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) {
-        return slotStyles.unavailable
+      if (!booking) {
+        if (!holidayMode && (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time))) {
+          return slotStyles.unavailable
+        }
+        return slotStyles.available
       }
-      return slotStyles.available
-    }
     if (Number(booking.user_id) === Number(user.id)) return slotStyles.mine
     if (booking.booking_type === 'band') return slotStyles.band
     if (booking.slot_category === 'extra') return slotStyles.individualExtra
@@ -89,7 +94,7 @@ function Calendar() {
     const time = TIME_SLOTS[ti].value
     const booking = getSlotBooking(date, time)
     if (!booking) {
-      if (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time)) return '🔒'
+      if (!holidayMode && (!isBookingWindowOpen(date) || !isAtLeast72Hours(date, time))) return '🔒'
       return ''
     }
     if (Number(booking.user_id) === Number(user.id)) {
@@ -179,7 +184,7 @@ function Calendar() {
       setSelectedAvailableSlot(null)
       return
     }
-
+    if (!holidayMode) {
     if (!isBookingWindowOpen(date)) {
       setBookingError('Booking window not open yet for this week')
       setSelectedAvailableSlot(null)
@@ -193,7 +198,7 @@ function Calendar() {
       setSelectedSlot(null)
       return
     }
-
+    }
     setSlotCategory(hasPrimaryThisWeek(date) ? 'extra' : 'primary')
     setSelectedAvailableSlot({ date, time })
     setSelectedSlot(null)
@@ -321,7 +326,7 @@ function Calendar() {
             </div>
           </div>
         </Card>
-        
+
         {isHoliday && (
           <Card className="p-4 mb-4 bg-primarySoft">
             <p className="text-sm font-medium text-navy">🎉 Holiday booking mode</p>

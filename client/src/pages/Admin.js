@@ -1552,7 +1552,23 @@ function Admin({ user, effectsProps }) {
                 )}
 
                 <SectionLabel>Bids — next week</SectionLabel>
-                {!biddingOpen ? (
+                {holidayMode ? (
+                  <Card className="p-4 mb-6">
+                    <p className="text-sm font-medium text-navy mb-1">🎉 Holiday mode is active</p>
+                    <p className="text-xs text-navy opacity-60 mb-3">
+                      No bidding needed — book slots directly for your band from the calendar.
+                    </p>
+                    {leaderBands.map(band => (
+                      <button
+                        key={band.band_id}
+                        onClick={() => navigate(`/calendar?band_id=${band.band_id}&holiday=true`)}
+                        className="w-full text-xs bg-primary text-navy px-3 py-2 rounded-xl font-medium mb-2"
+                      >
+                        🎸 Book slot for {band.band_name}
+                      </button>
+                    ))}
+                  </Card>
+                ) : !biddingOpen ? (
                   <Card className="p-4 mb-6 flex justify-between items-center">
                     <p className="text-sm font-medium text-navy">Bidding not open yet</p>
                     <Badge>Closed 🔒</Badge>
