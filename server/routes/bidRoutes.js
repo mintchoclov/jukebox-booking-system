@@ -465,6 +465,10 @@ router.get('/', (req, res) => {
       bids.slot_time,
       bids.preference_rank,
       bids.bid_value,
+      bids.allocation_status,
+      bids.reject_reason_category,
+      bids.reject_reason,
+      bids.allocation_run_at,
       bids.created_at
 
     FROM bids
@@ -493,4 +497,50 @@ router.get('/', (req, res) => {
 })
 
 
+// NO.4
+// GET /api/bids/my-results?band_id=1
+// band sees its own bid allocation results and rejection reasons
+router.get('/my-results', (req, res) => {
+  const { band_id } = req.query
+
+  if (!band_id) {
+    return res.status(400).json({
+      message: 'band_id is required.'
+    })
+  }
+
+  const sql = `
+    SELECT
+      bids.id,
+      bids.band_id,
+      bands.name AS band_name,
+      bids.slot_date,
+      bids.slot_time,
+      bids.preference_rank,
+      bids.bid_value,
+      bids.allocation_status,
+      bids.reject_reason_category,
+      bids.reject_reason,
+      bids.allocation_run_at,
+      bids.created_at
+    FROM bids
+    LEFT JOIN bands
+      ON bids.band_id = bands.id
+    WHERE bids.band_id = ?
+    ORDER BY
+      bids.slot_date DESC,
+      bids.preference_rank ASC
+  `
+
+  db.query(sql, [band_id], (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to fetch bid results.'
+      })
+    }
+
+    res.json(results)
+  })
+})
 module.exports = router

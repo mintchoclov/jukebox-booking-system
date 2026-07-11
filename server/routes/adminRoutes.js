@@ -172,6 +172,87 @@ function cleanEditableName(value) {
   return String(value || '').trim()
 }
 
+// Added helper for reject reason of booking
+function getAllocationLossReasonCategory(bid, winner, skippedBandIds) {
+  if (skippedBandIds.has(Number(bid.band_id))) {
+    return 'cascading_priority'
+  }
+
+  if (!winner) {
+    return 'cascading_priority'
+  }
+
+  if (Number(bid.effective_bid_value) < Number(winner.effective_bid_value)) {
+    return 'low_bid_point'
+  }
+
+  if (
+    Number(bid.effective_bid_value) === Number(winner.effective_bid_value) &&
+    Number(bid.preference_rank) === Number(winner.preference_rank)
+  ) {
+    return 'random_tie'
+  }
+
+  return 'cascading_priority'
+}
+
+function getAllocationLossReasonText(category) {
+  const map = {
+    cascading_priority: 'Lose to cascading priority',
+    random_tie: 'Lose to random tie',
+    low_bid_point: 'Lose to low bid point'
+  }
+
+  return map[category] || 'Lost during allocation'
+}
+
+function saveAllocationResults(updates, callback) {
+  if (!updates || updates.length === 0) {
+    return callback(null)
+  }
+
+  const sql = `
+    UPDATE bids
+    SET
+      allocation_status = ?,
+      reject_reason_category = ?,
+      reject_reason = ?,
+      allocation_run_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `
+
+  let remaining = updates.length
+  let hasError = false
+
+  updates.forEach((update) => {
+    db.query(
+      sql,
+      [
+        update.allocation_status,
+        update.reject_reason_category,
+        update.reject_reason,
+        update.bid_id
+      ],
+      (err) => {
+        if (hasError) {
+          return
+        }
+
+        if (err) {
+          hasError = true
+          return callback(err)
+        }
+
+        remaining -= 1
+
+        if (remaining === 0) {
+          callback(null)
+        }
+      }
+    )
+  })
+}
+
 // GET /api/admin/holiday-mode
 // frontend can use this api to decide whether to hide bidding options.
 router.get('/holiday-mode', (req, res) => {
@@ -536,6 +617,7 @@ router.post('/run-allocation', (req, res) => {
     const bandWeeklyWinCount = {}
 
     const response = []
+    const bidResultUpdates = []
 
     sortedSlots.forEach((slot) => {
       // Sort candidates by score desc, then preference rank asc
@@ -599,6 +681,16 @@ router.post('/run-allocation', (req, res) => {
       }
 
       if (!winner) {
+
+        slot.all_bids.forEach((bid) => {
+          bidResultUpdates.push({
+            bid_id: bid.bid_id,
+            allocation_status: 'lost',
+            reject_reason_category: 'cascading_priority',
+            reject_reason: getAllocationLossReasonText('cascading_priority')
+          })
+        })
+
         response.push({
           slot_date: slot.slot_date,
           slot_time: slot.slot_time,
@@ -618,6 +710,36 @@ router.post('/run-allocation', (req, res) => {
       }
 
       const winnerCountKey = `${slot.week_monday}_${winner.band_id}`
+
+      const skippedBandIds = new Set(
+        skippedBecauseMaxSlots.map((item) => Number(item.band_id))
+      )
+
+      slot.all_bids.forEach((bid) => {
+        if (Number(bid.bid_id) === Number(winner.bid_id)) {
+          bidResultUpdates.push({
+            bid_id: bid.bid_id,
+            allocation_status: 'won',
+            reject_reason_category: null,
+            reject_reason: null
+          })
+
+          return
+        }
+
+        const category = getAllocationLossReasonCategory(
+          bid,
+          winner,
+          skippedBandIds
+        )
+
+        bidResultUpdates.push({
+          bid_id: bid.bid_id,
+          allocation_status: 'lost',
+          reject_reason_category: category,
+          reject_reason: getAllocationLossReasonText(category)
+        })
+      })
 
       response.push({
         slot_date: slot.slot_date,
@@ -643,10 +765,53 @@ router.post('/run-allocation', (req, res) => {
       })
     })
 
-    res.json(response)
+    saveAllocationResults(bidResultUpdates, (saveErr) => {
+      if (saveErr) {
+        console.error(saveErr)
+        return res.status(500).json({
+          message: 'Allocation calculated, but failed to save bid rejection reasons.'
+        })
+      }
+
+      return res.json(response)
+    })
   })
 })
 
+
+
+// MS3 added api for rejection reason
+// GET /api/admin/rejection-summary
+// Admin sees summary of why bids lost allocation.
+router.get('/rejection-summary', (req, res) => {
+  const sql = `
+    SELECT
+      reject_reason_category,
+      CASE
+        WHEN reject_reason_category = 'cascading_priority' THEN 'Lose to cascading priority'
+        WHEN reject_reason_category = 'random_tie' THEN 'Lose to random tie'
+        WHEN reject_reason_category = 'low_bid_point' THEN 'Lose to low bid point'
+        ELSE 'Unknown'
+      END AS reject_reason_label,
+      COUNT(*) AS count
+    FROM bids
+    WHERE allocation_status = 'lost'
+      AND reject_reason_category IS NOT NULL
+    GROUP BY reject_reason_category
+    ORDER BY count DESC
+  `
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error(err)
+      return res.status(500).json({
+        message: 'Failed to fetch rejection summary.'
+      })
+    }
+
+    res.json(results)
+  })
+})
 
 
 // admin creates a new band
