@@ -45,6 +45,8 @@ function Admin({ user, effectsProps }) {
   const [editingBand, setEditingBand] = useState(null)
   const [editBandTypeValue, setEditBandTypeValue] = useState('standard')
   const [holidayMode, setHolidayMode] = useState(false)
+  const [overrideBandId, setOverrideBandId] = useState({}) 
+  const [confirmingAll, setConfirmingAll] = useState(false) 
 
   const weekDates = getWeekDates(weekOffset)
   const bookingsWeekDates = getWeekDates(bookingsWeekOffset)
@@ -288,15 +290,17 @@ function Admin({ user, effectsProps }) {
       .catch(() => setError('Failed to run allocation'))
   }
 
-  function confirmBooking(slot) {
-    fetch(`${API_URL}/api/admin/confirm-booking`, {
+  function confirmBooking(slot, overrideBand) {
+    const bandId = overrideBand ? overrideBand.band_id : slot.winner_band_id
+    const score = overrideBand ? overrideBand.score : slot.winner_score
+    return fetch(`${API_URL}/api/admin/confirm-booking`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        band_id: slot.winner_band_id,
+        band_id: bandId,
         slot_date: slot.slot_date,
         slot_time: slot.slot_time,
-        allocation_score: slot.winner_score
+        allocation_score: score
       })
     })
       .then(res => res.json())
@@ -313,6 +317,17 @@ function Admin({ user, effectsProps }) {
         }
       })
       .catch(() => setError('Failed to confirm booking'))
+  }
+
+  async function confirmAllBookings() {
+    const suggested = allocation.filter(a => a.status === 'suggested')
+    if (suggested.length === 0) return
+    setConfirmingAll(true)
+    setError('')
+    for (const slot of suggested) {
+      await confirmBooking(slot)
+    }
+    setConfirmingAll(false)
   }
 
   function approveUser(userId) {
@@ -812,56 +827,6 @@ function Admin({ user, effectsProps }) {
           {/* ===== BIDDING ===== */}
           {activeTab === 'bidding' && (
             <div>
-              {selectedSlot && (
-                <Card className="p-4 mb-6">
-                  <div className="flex justify-between items-center mb-3">
-                    <p className="text-sm font-medium text-navy">
-                      {DAYS[selectedSlot.di]} {weekDates[selectedSlot.di]?.getDate()} · {TIMES[selectedSlot.ti]}
-                    </p>
-                    <button onClick={() => setSelectedSlot(null)} className="text-xs text-navy opacity-40">✕</button>
-                  </div>
-                  {selectedSlot.confirmed ? (
-                    <div className="bg-success rounded-xl p-3 mb-3">
-                      <p className="text-xs font-medium text-successText">
-                        Confirmed: {selectedSlot.confirmed.band_name || 'Band'}
-                      </p>
-                    </div>
-                  ) : selectedSlot.alloc ? (
-                    <div className="bg-primarySoft rounded-xl p-3 mb-3">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-xs font-medium text-navy">Suggested: {selectedSlot.alloc.suggested_winner}</p>
-                          <p className="text-xs text-navy opacity-60">
-                            {selectedSlot.alloc.winner_score}pts {selectedSlot.alloc.is_tie && '— TIE'}
-                          </p>
-                          {selectedSlot.alloc.skipped_bands?.length > 0 && (
-                            <p className="text-xs text-navy opacity-40 mt-1">
-                              Skipped: {selectedSlot.alloc.skipped_bands.map(b => b.band_name).join(', ')}
-                            </p>
-                          )}
-                        </div>
-                        <Button variant="primary" className="px-3 py-1 text-xs" onClick={() => confirmBooking(selectedSlot.alloc)}>
-                          Confirm
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {selectedSlot.slotBids.length > 0 ? (
-                    <>
-                      <SectionLabel>All bids</SectionLabel>
-                      {selectedSlot.slotBids.map((bid, i) => (
-                        <div key={i} className="flex justify-between items-center py-2 border-b border-beige last:border-0">
-                          <p className="text-xs text-navy">{bid.band_name}</p>
-                          <Badge>Rank {bid.preference_rank} · {bid.bid_value}pts</Badge>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <p className="text-xs text-navy opacity-40 text-center py-2">No bids for this slot</p>
-                  )}
-                </Card>
-              )}
-
               <div className="flex justify-between items-center mb-4">
                 <button
                   onClick={() => { setWeekOffset(w => w - 1); setSelectedSlot(null) }}
@@ -897,24 +862,149 @@ function Admin({ user, effectsProps }) {
                 />
               </Card>
 
+         {selectedSlot && (
+            <Card className="p-4 mb-6">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-medium text-navy">
+                  {DAYS[selectedSlot.di]} {weekDates[selectedSlot.di]?.getDate()} · {TIMES[selectedSlot.ti]}
+                </p>
+                <button onClick={() => setSelectedSlot(null)} className="text-xs text-navy opacity-40">✕</button>
+              </div>
+
+              {selectedSlot.confirmed ? (
+                <div className="bg-success rounded-xl p-3 mb-3">
+                  <p className="text-xs font-medium text-successText">
+                    Confirmed: {selectedSlot.confirmed.band_name || 'Band'}
+                  </p>
+                </div>
+              ) : selectedSlot.alloc ? (
+                <div className="bg-primarySoft rounded-xl p-3 mb-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <div>
+                      <p className="text-sm font-medium text-navy">{selectedSlot.alloc.suggested_winner}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-navy opacity-60">{selectedSlot.alloc.winner_score}pts · rank {selectedSlot.alloc.winner_preference_rank}</span>
+                        {selectedSlot.alloc.is_tie && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#FAEEDA', color: '#633806' }}>
+                            Tie — randomised
+                          </span>
+                        )}
+                      </div>
+                      {selectedSlot.alloc.skipped_bands?.length > 0 && (
+                        <p className="text-xs text-navy opacity-40 mt-1">
+                          Skipped (hit 2-slot cap): {selectedSlot.alloc.skipped_bands.map(b => b.band_name).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      className="text-xs font-medium px-4 py-1.5 rounded-lg"
+                      style={{ background: '#F5C842', color: '#412402' }}
+                      onClick={() => confirmBooking(selectedSlot.alloc)}
+                    >
+                      Confirm
+                    </button>
+                  </div>
+
+                  {/* override section */}
+                  {selectedSlot.alloc.all_bids?.filter(b => Number(b.band_id) !== Number(selectedSlot.alloc.winner_band_id)).length > 0 && (
+                    <div className="border-t border-beige pt-3 mt-2">
+                      <p className="text-xs text-navy opacity-50 mb-2">Override — give slot to a different bidder:</p>
+                      <div className="flex gap-2 items-center">
+                        <select
+                          value={overrideBandId[`${selectedSlot.alloc.slot_date}_${selectedSlot.alloc.slot_time}`] || ''}
+                          onChange={e => setOverrideBandId(prev => ({
+                            ...prev,
+                            [`${selectedSlot.alloc.slot_date}_${selectedSlot.alloc.slot_time}`]: e.target.value
+                          }))}
+                          className="flex-1 text-xs border border-beige rounded-xl px-3 py-2 bg-cream text-navy outline-none focus:border-primary"
+                        >
+                          <option value="">Select a band...</option>
+                          {selectedSlot.alloc.all_bids
+                            .filter(b => Number(b.band_id) !== Number(selectedSlot.alloc.winner_band_id))
+                            .map(b => (
+                              <option key={b.band_id} value={b.band_id}>
+                                {b.band_name} ({b.score}pts, rank {b.preference_rank})
+                              </option>
+                            ))}
+                        </select>
+                        <Button
+                          variant="secondary"
+                          className="px-3 py-1 text-xs shrink-0"
+                          onClick={() => {
+                            const slotKey = `${selectedSlot.alloc.slot_date}_${selectedSlot.alloc.slot_time}`
+                            const chosenId = overrideBandId[slotKey]
+                            if (!chosenId) return
+                            const chosenBand = selectedSlot.alloc.all_bids.find(b => Number(b.band_id) === Number(chosenId))
+                            if (chosenBand) confirmBooking(selectedSlot.alloc, chosenBand)
+                          }}
+                        >
+                          Override
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {selectedSlot.slotBids.length > 0 ? (
+                <>
+                  <SectionLabel>All bids</SectionLabel>
+                  {selectedSlot.slotBids.map((bid, i) => (
+                    <div key={i} className="flex justify-between items-center py-2 border-b border-beige last:border-0">
+                      <p className="text-xs text-navy">{bid.band_name}</p>
+                      <Badge>Rank {bid.preference_rank} · {bid.bid_value}pts</Badge>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-xs text-navy opacity-40 text-center py-2">No bids for this slot</p>
+              )}
+            </Card>
+          )}
+
               {allocationRun && allocation.length > 0 && (
                 <div className="mb-6">
-                  <SectionLabel>Suggested allocation — click slot to confirm</SectionLabel>
-                  <div className="flex flex-wrap gap-3 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <SectionLabel>Suggested allocation</SectionLabel>
+                      {allocation.filter(a => a.status === 'suggested').length > 0 ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#FAEEDA', color: '#633806' }}>
+                          {allocation.filter(a => a.status === 'suggested').length} to confirm
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#EAF3DE', color: '#27500A' }}>
+                          All confirmed ✓
+                        </span>
+                      )}
+                    </div>
+                    {allocation.filter(a => a.status === 'suggested').length > 0 && (
+                      <button
+                        onClick={confirmAllBookings}
+                        disabled={confirmingAll}
+                        className="text-xs font-medium px-4 py-1.5 rounded-full disabled:opacity-50"
+                        style={{ background: '#F5C842', color: '#412402' }}
+                      >
+                        {confirmingAll ? 'Confirming...' : `Confirm all (${allocation.filter(a => a.status === 'suggested').length})`}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* legend */}
+                  <div className="flex flex-wrap gap-3 mb-3">
                     {[
-                      { bg: '#F5C842', border: '#09122C', label: 'Suggested winner — click to confirm' },
+                      { bg: '#F5C842', border: '#854F0B', label: 'Suggested — click to confirm or override' },
+                      { bg: '#d4edda', border: '#3B6D11', label: 'Already confirmed' },
                       { bg: '#FFCDD2', border: '#E57373', label: 'No eligible band' },
-                      { bg: '#d4edda', border: '#2e7d32', label: 'Already confirmed' },
-                      { bg: '#ffffff', border: '#F0D9B5', label: 'No bids' },
                     ].map((l, i) => (
                       <div key={i} className="flex items-center gap-1">
-                        <div style={{ width: 10, height: 10, borderRadius: 3, background: l.bg, border: `1px solid ${l.border}` }}></div>
+                        <div style={{ width: 10, height: 10, borderRadius: 3, background: l.bg, border: `1.5px solid ${l.border}` }}></div>
                         <span className="text-xs text-navy opacity-50">{l.label}</span>
                       </div>
                     ))}
                   </div>
 
-                  <Card className="p-4 mb-4">
+                  {/* allocation grid */}
+                  <Card className="p-4 mb-3">
                     <SlotGrid
                       weekDates={weekDates}
                       getSlotStyle={handleGetAllocationSlotStyle}
@@ -924,6 +1014,7 @@ function Admin({ user, effectsProps }) {
                     />
                   </Card>
 
+                  {/* unallocated slots */}
                   {allocation.filter(a => a.status === 'unallocated').length > 0 && (
                     <>
                       <SectionLabel>Unallocated slots ⚠️</SectionLabel>

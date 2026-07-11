@@ -9,7 +9,7 @@ import Individual from './pages/Individual'
 import Leader from './pages/Leader'
 import Calendar from './pages/Calendar'
 import ResetPassword from './pages/ResetPassword'
-
+import API_URL from './config'
 import Blobs from './components/Blobs'
 
 function App() {
@@ -27,13 +27,20 @@ function App() {
   )
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      fetch(`${API_URL}/api/ping`).catch(() => { })
+    }, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark')
     } else {
       document.documentElement.classList.remove('dark')
     }
   }, [darkMode])
-
+  
   function toggleDarkMode(val) {
     setDarkMode(val)
     localStorage.setItem('darkMode', String(val))
