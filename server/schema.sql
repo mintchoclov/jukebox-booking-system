@@ -39,8 +39,12 @@ CREATE TABLE IF NOT EXISTS bids (
     slot_time TIME,
     preference_rank INT,
     bid_value INT,
+    allocation_status ENUM('pending', 'won', 'lost') DEFAULT 'pending',
+    reject_reason_category ENUM('cascading_priority', 'random_tie', 'low_bid_point') NULL,
+    reject_reason VARCHAR(255) NULL,
+    allocation_run_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    );
 /* MS1 bookings table, now the not commented one is the actual code for bookings
 CREATE TABLE IF NOT EXISTS bookings (
     id INT AUTO_INCREMENT PRIMARY KEY,
