@@ -294,3 +294,7 @@ body {
 .dark .text-navy {
   color: rgba(255, 255, 255, 0.85) !important;
 }
+
+.dark [style*="color"] {
+  color: rgba(255, 255, 255, 0.85) !important;
+}

@@ -267,7 +267,7 @@ function Signup() {
               <Label>Username</Label>
               <input
                 type="text"
-                placeholder="Enter your name"
+                placeholder="Please enter a username with your REAL name"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-3 py-2.5 text-sm border border-[#F0D9B5] rounded-xl bg-[#FDF6E3] text-[#09122C] outline-none focus:border-[#F5C842] focus:ring-2 focus:ring-[#F5C842] focus:ring-opacity-30"
