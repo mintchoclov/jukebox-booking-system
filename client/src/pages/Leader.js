@@ -51,12 +51,12 @@ function Leader({ user, effectsProps }) {
           if (data.id) {
             localStorage.setItem('user', JSON.stringify(data))
             setMe(data)
-          }
-          if (data.role && data.role !== user.role) {
-            localStorage.setItem('user', JSON.stringify(data))
-            if (data.role === 'admin') navigate('/admin')
-            else if (data.role === 'band') navigate('/leader')
-            else navigate('/individual')
+            if (data.role && data.role !== user.role) {
+              localStorage.setItem('user', JSON.stringify(data))
+              if (data.role === 'admin') navigate('/admin')
+              else if (data.role === 'band') navigate('/leader')
+              else navigate('/individual')
+            }
           }
         })
         .catch(() => { })
