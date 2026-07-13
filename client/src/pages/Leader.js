@@ -45,18 +45,18 @@ function Leader({ user, effectsProps }) {
 
   useEffect(() => {
     function refreshMe() {
-      if (data.role && data.role !== user.role) {
-        localStorage.setItem('user', JSON.stringify(data))
-        if (data.role === 'admin') navigate('/admin')
-        else if (data.role === 'band') navigate('/leader')
-        else navigate('/individual')
-      }
       fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
         .then(res => res.json())
         .then(data => {
           if (data.id) {
             localStorage.setItem('user', JSON.stringify(data))
             setMe(data)
+          }
+          if (data.role && data.role !== user.role) {
+            localStorage.setItem('user', JSON.stringify(data))
+            if (data.role === 'admin') navigate('/admin')
+            else if (data.role === 'band') navigate('/leader')
+            else navigate('/individual')
           }
         })
         .catch(() => { })
