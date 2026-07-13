@@ -45,6 +45,12 @@ function Leader({ user, effectsProps }) {
 
   useEffect(() => {
     function refreshMe() {
+      if (data.role && data.role !== user.role) {
+        localStorage.setItem('user', JSON.stringify(data))
+        if (data.role === 'admin') navigate('/admin')
+        else if (data.role === 'band') navigate('/leader')
+        else navigate('/individual')
+      }
       fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
         .then(res => res.json())
         .then(data => {
@@ -195,10 +201,12 @@ function Leader({ user, effectsProps }) {
           <h1 className="text-2xl font-medium text-navy">{me.username} 🎸</h1>
           <p className="text-xs text-navy opacity-40 mt-1 mb-1">Band leader</p>
           <div className="flex flex-wrap justify-center gap-1">
-            {myBands.filter(b => b.is_leader || b.member_role === 'leader').map(band => (
+            {myBands.map(band => (
               <span key={band.band_id} className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: '#faeeda', color: '#854f0b' }}>
-                🎸 {band.band_name}
+                style={band.is_leader || band.member_role === 'leader'
+                  ? { background: '#faeeda', color: '#854f0b' }
+                  : { background: '#f1efe8', color: '#5f5e5a' }}>
+                {band.is_leader || band.member_role === 'leader' ? '🎸 ' : '👥 '}{band.band_name}
               </span>
             ))}
           </div>

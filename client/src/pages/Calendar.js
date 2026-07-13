@@ -27,6 +27,7 @@ function Calendar() {
   const [cancelSuccess, setCancelSuccess] = useState(false)
   const [notes, setNotes] = useState('')
   const [holidayMode, setHolidayMode] = useState(false)
+  const [holidayModeLoaded, setHolidayModeLoaded] = useState(false)
 
   const params = new URLSearchParams(window.location.search)
   const isHoliday = params.get('holiday') === 'true'
@@ -53,6 +54,13 @@ function Calendar() {
       .then(res => res.json())
       .then(data => setHolidayMode(data.holiday_mode))
       .catch(() => { })
+    fetch(`${API_URL}/api/admin/holiday-mode`)
+      .then(res => res.json())
+      .then(data => {
+        setHolidayMode(data.holiday_mode)
+        setHolidayModeLoaded(true) 
+      })
+      .catch(() => setHolidayModeLoaded(true)) 
   }
 
   function fetchMyBookings() {
@@ -306,7 +314,7 @@ function Calendar() {
       })
   }
 
-  if (loading) return (
+  if (loading || !holidayModeLoaded) return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-navy text-sm">Loading...</p>
     </div>
