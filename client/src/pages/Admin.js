@@ -73,18 +73,18 @@ function Admin({ user, effectsProps }) {
 
   useEffect(() => {
     function refreshMe() {
-      if (data.role && data.role !== user.role) {
-        localStorage.setItem('user', JSON.stringify(data))
-        if (data.role === 'admin') navigate('/admin')
-        else if (data.role === 'band') navigate('/leader')
-        else navigate('/individual')
-      }
       fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
         .then(res => res.json())
         .then(data => {
           if (data.id) {
             localStorage.setItem('user', JSON.stringify(data))
             setMe(data)
+            if (data.role && data.role !== user.role) {
+              localStorage.setItem('user', JSON.stringify(data))
+              if (data.role === 'admin') navigate('/admin')
+              else if (data.role === 'band') navigate('/leader')
+              else navigate('/individual')
+          }
           }
         })
         .catch(() => { })
@@ -425,7 +425,7 @@ function Admin({ user, effectsProps }) {
         const confirmed = window.confirm(
           'This user is not a band leader. Are you sure you want to update their role to band?'
         )
-        if (!confirmed) return
+        if (!confirmed) return  
       }
     }
     fetch(`${API_URL}/api/admin/update-user-role`, {
