@@ -42,9 +42,9 @@ export const biddingSlotStyles = {
 
 export const biddingLegendItems = [
   { bg: '#d4edda', border: '#a8d5b5', label: 'Available' },
-  { bg: '#FFF9C4', border: '#F5C842', label: 'Low (1–4pts)' },
-  { bg: '#FFE0B2', border: '#FF9800', label: 'Med (5–8pts)' },
-  { bg: '#FFCDD2', border: '#E57373', label: 'High (9+pts)' },
+  { bg: '#FFF9C4', border: '#F5C842', label: 'Low (1–2pts)' },
+  { bg: '#FFE0B2', border: '#FF9800', label: 'Med (3-4pts)' },
+  { bg: '#FFCDD2', border: '#E57373', label: 'High (5+pts)' },
   { bg: '#333', border: '#222', label: 'Blocked' },
 ]
 export function getBiddingSlotStyle(totalPts, isBlocked, isConfirmed, isMyBid) {

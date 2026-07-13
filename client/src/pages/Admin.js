@@ -73,6 +73,12 @@ function Admin({ user, effectsProps }) {
 
   useEffect(() => {
     function refreshMe() {
+      if (data.role && data.role !== user.role) {
+        localStorage.setItem('user', JSON.stringify(data))
+        if (data.role === 'admin') navigate('/admin')
+        else if (data.role === 'band') navigate('/leader')
+        else navigate('/individual')
+      }
       fetch(`${API_URL}/api/auth/me?user_id=${user.id}`)
         .then(res => res.json())
         .then(data => {
@@ -211,8 +217,8 @@ function Admin({ user, effectsProps }) {
     if (isBlocked) return biddingSlotStyles.blocked
     if (confirmed) return biddingSlotStyles.confirmed
     if (totalPts === 0) return biddingSlotStyles.available
-    if (totalPts <= 4) return biddingSlotStyles.low
-    if (totalPts <= 8) return biddingSlotStyles.med
+    if (totalPts <= 2) return biddingSlotStyles.low
+    if (totalPts <= 4) return biddingSlotStyles.med
     return biddingSlotStyles.high
   }
 
@@ -412,6 +418,16 @@ function Admin({ user, effectsProps }) {
   }
 
   function updateUserRole(userId, role) {
+    if (role === 'band') {
+      const targetUser = allUsers.find(u => u.id === userId)
+      const isLeader = targetUser?.bands?.some(b => b.is_leader)
+      if (!isLeader) {
+        const confirmed = window.confirm(
+          'This user is not a band leader. Are you sure you want to update their role to band?'
+        )
+        if (!confirmed) return
+      }
+    }
     fetch(`${API_URL}/api/admin/update-user-role`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -423,7 +439,7 @@ function Admin({ user, effectsProps }) {
         else { setEditUser(null); refreshUsers() }
       })
       .catch(() => setError('Failed to update user role'))
-  }  
+  }
 
   function deleteBand(bandId) {
     fetch(`${API_URL}/api/admin/delete-band`, {
@@ -578,16 +594,17 @@ function Admin({ user, effectsProps }) {
               <SectionLabel>This week at a glance</SectionLabel>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 {[
-                  { num: confirmedBookings.length, label: 'Confirmed slots', border: '#8DAB57', color: '#5B7B36', labelColor: '#788C5A' },
-                  { num: pendingUsers.length, label: 'Pending users', border: '#E0A93E', color: '#B07A18', labelColor: '#A98A52' },
-                  { num: bids.length, label: 'Bids submitted', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
-                  { num: allBands.length, label: 'Active bands', border: '#C97A9A', color: '#B0557A', labelColor: '#A87487' },
+                  { num: confirmedBookings.length, label: 'Confirmed slots', tab: 'bookings', border: '#8DAB57', color: '#5B7B36', labelColor: '#788C5A' },
+                  { num: pendingUsers.length, label: 'Pending users', tab: 'users', border: '#E0A93E', color: '#B07A18', labelColor: '#A98A52' },
+                  { num: bids.length, label: 'Bids submitted', tab: 'bidding', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
+                  { num: allBands.length, label: 'Active bands', tab: 'users', border: '#C97A9A', color: '#B0557A', labelColor: '#A87487' },
                 ].map((stat, i) => (
-                  <Card key={i} className="p-4 text-center" style={{ background: '#FFFDF8', border: `2px solid ${stat.border}` }}>
-                    <div className="text-3xl font-medium text-navy" style={{ color: stat.color }} >{stat.num}</div>
-                    <div className="text-xs text-navy mt-1" style={{ color: stat.labelColor }}>
-                      {stat.label}
-                    </div>
+                  <Card key={i} className="p-4 text-center cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{ background: '#FFFDF8', border: `2px solid ${stat.border}` }}
+                    onClick={() => setActiveTab(stat.tab)} // NEW
+                  >
+                    <div className="text-3xl font-medium" style={{ color: stat.color }}>{stat.num}</div>
+                    <div className="text-xs mt-1" style={{ color: stat.labelColor }}>{stat.label}</div>
                   </Card>
                 ))}
               </div>
