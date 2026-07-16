@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
-import Mascot from '../assets/mascot.svg'
+import Indiv from '../assets/indiv.svg'
 import { Card, Button, Badge, SectionLabel } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
 import SettingsTab from '../components/SettingsTab'
@@ -97,7 +97,7 @@ function Individual({ user, effectsProps }) {
 
         {/* header card */}
         <Card className="p-6 text-center mb-6">
-          <img src={Mascot} alt="JukeBox mascot" className="w-32 mx-auto mb-3" />
+          <img src={Indiv} alt="Individual" className="w-32 mx-auto mb-3" />
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
           <h1 className="text-2xl font-medium text-navy">{me.username} 🎵</h1>
           <p className="text-xs text-navy opacity-40 mt-1">Ridge View RC · Individual</p>

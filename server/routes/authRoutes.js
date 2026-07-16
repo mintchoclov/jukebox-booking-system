@@ -196,6 +196,14 @@ router.post('/bump-admin', (req, res) => {
   })
 })
 
+router.post('/unlink-telegram', (req, res) => {
+  const { user_id } = req.body
+  if (!user_id) return res.status(400).json({ message: 'user_id is required.' })
+  db.query('UPDATE users SET telegram_chat_id = NULL WHERE id = ?', [user_id], (err) => {
+    if (err) return res.status(500).json({ message: 'Failed to unlink Telegram.' })
+    res.json({ message: 'Telegram unlinked successfully.' })
+  })
+})
 
 // POST /api/auth/request-otp
 router.post('/request-otp', (req, res) => {
