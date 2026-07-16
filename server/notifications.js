@@ -153,7 +153,7 @@ function notifySlotDisplaced(userId, slotDate, slotTime) {
 }
 
 function notifySlotReminder() {
-  if (!isTelegramEnabled()) return 
+  if (!isTelegramEnabled()) return
 
   const now = new Date()
   const in15mins = new Date(now.getTime() + 15 * 60 * 1000)
@@ -162,39 +162,42 @@ function notifySlotReminder() {
   const slotTime = `${slotHour}:00:00`
 
   const indivsql = `
-    SELECT bk.slot_date, bk.slot_time, u.telegram_chat_id, u.username
+    SELECT bk.id, bk.slot_date, bk.slot_time, u.telegram_chat_id, u.username
     FROM bookings bk
     JOIN users u ON bk.user_id = u.id
     WHERE bk.slot_date = ? AND bk.slot_time = ?
     AND bk.status = 'confirmed'
     AND bk.booking_type = 'individual'
+    AND bk.reminder_sent = 0
     AND u.telegram_chat_id IS NOT NULL
   `
   db.query(indivsql, [slotDate, slotTime], (err, results) => {
     if (err) return console.error(err)
     results.forEach(booking => {
       bot.SlotReminder(booking.telegram_chat_id, booking.username, booking.slot_date, booking.slot_time)
+      db.query('UPDATE bookings SET reminder_sent = 1 WHERE id = ?', [booking.id])
     })
   })
 
   const bandSql = `
-  SELECT bk.slot_date, bk.slot_time, u.telegram_chat_id, b.name AS band_name
-  FROM bookings bk
-  JOIN bands b ON bk.band_id = b.id
-  JOIN band_members bm ON bm.band_id = b.id
-  JOIN users u ON bm.user_id = u.id
-  WHERE bk.slot_date = ? AND bk.slot_time = ?
-    AND bk.status = 'confirmed'
-    AND bk.booking_type = 'band'
-    AND u.telegram_chat_id IS NOT NULL
-`
+    SELECT bk.id, bk.slot_date, bk.slot_time, u.telegram_chat_id, b.name AS band_name
+    FROM bookings bk
+    JOIN bands b ON bk.band_id = b.id
+    JOIN band_members bm ON bm.band_id = b.id
+    JOIN users u ON bm.user_id = u.id
+    WHERE bk.slot_date = ? AND bk.slot_time = ?
+      AND bk.status = 'confirmed'
+      AND bk.booking_type = 'band'
+      AND bk.reminder_sent = 0
+      AND u.telegram_chat_id IS NOT NULL
+  `
   db.query(bandSql, [slotDate, slotTime], (err, results) => {
     if (err) return console.error(err)
     results.forEach(booking => {
       bot.SlotReminder(booking.telegram_chat_id, booking.band_name, booking.slot_date, booking.slot_time)
+      db.query('UPDATE bookings SET reminder_sent = 1 WHERE id = ?', [booking.id])
     })
   })
-
 }
 
 function notifyDehumidifier(userId) {
@@ -349,6 +352,7 @@ function notifyBandSlotConfirmedMembers(bandId, slotDate, slotTime) {
     JOIN bands b ON bm.band_id = b.id
     JOIN users u ON bm.user_id = u.id
     WHERE bm.band_id = ? AND u.telegram_chat_id IS NOT NULL
+      AND bm.member_role != 'leader'  
   `
   db.query(sql, [bandId], (err, results) => {
     if (err) return console.error(err)
@@ -376,6 +380,21 @@ function notifyBookingCancelled(userId, slotDate, slotTime) {
     if (err) return console.error(err)
     results.forEach(u => {
       bot.BookingCancelled(u.telegram_chat_id, u.username, slotDate, slotTime)
+    })
+  })
+}
+
+function notifyAdminRunAllocation() {
+  if (!isTelegramEnabled()) return
+  const sql = `
+    SELECT telegram_chat_id
+    FROM users
+    WHERE role = 'admin' AND telegram_chat_id IS NOT NULL
+  `
+  db.query(sql, (err, results) => {
+    if (err) return console.error(err)
+    results.forEach(admin => {
+      bot.AdminRunAllocationReminder(admin.telegram_chat_id)
     })
   })
 }
@@ -451,6 +470,53 @@ function notifyBidLost(bandId, slotDate, slotTime, reason) {
       bot.BidLost(leader.telegram_chat_id, leader.band_name, slotDate, slotTime, reason)
     })
   })
+  function notifyLastUserDehumidifier() {
+    if (!isTelegramEnabled()) return
+
+    const now = new Date()
+    // SGT offset
+    const sgt = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+    const slotDate = sgt.toISOString().split('T')[0]
+    const slotHour = sgt.getUTCHours().toString().padStart(2, '0')
+    const currentSlotTime = `${slotHour}:00:00`
+
+    // find the last confirmed booking of today that just started
+    // and has no humidifier photo yet
+    const sql = `
+    SELECT b.id, b.user_id, b.band_id, b.booking_type, b.slot_date, b.slot_time,
+           b.humidifier_photo_url
+    FROM bookings b
+    WHERE b.slot_date = ?
+      AND b.slot_time = ?
+      AND b.status = 'confirmed'
+      AND b.humidifier_photo_url IS NULL
+      AND b.slot_time = (
+        SELECT MAX(slot_time) FROM bookings
+        WHERE slot_date = ? AND status = 'confirmed'
+      )
+  `
+
+    db.query(sql, [slotDate, currentSlotTime, slotDate], (err, results) => {
+      if (err) return console.error(err)
+      results.forEach(booking => {
+        if (booking.booking_type === 'individual' && booking.user_id) {
+          notifyDehumidifier(booking.user_id)
+        } else if (booking.booking_type === 'band' && booking.band_id) {
+          // notify band leader
+          const leaderSql = `
+          SELECT u.id FROM users u
+          JOIN bands b ON b.leader_user_id = u.id
+          WHERE b.id = ?
+        `
+          db.query(leaderSql, [booking.band_id], (err, leaders) => {
+            if (err) return console.error(err)
+            leaders.forEach(l => notifyDehumidifier(l.id))
+          })
+        }
+      })
+    })
+  }
+
 }
 
 module.exports = {
@@ -472,7 +538,9 @@ module.exports = {
   notifyIndividualBookingConfirmed,
   notifyBookingCancelled,
   notifyDayBeforeReminder,
+  notifyAdminRunAllocation,
   notifyPoolSlotAvailable,
+  notifyLastUserDehumidifier,
   notifyHumidifierFlagged,
   notifyBidLost
 }

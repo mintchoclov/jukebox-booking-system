@@ -436,7 +436,42 @@ router.post('/open-bidding', (req, res) => {
   })
 })
 
+router.post('/delete-booking', (req, res) => {
+  const { booking_id, admin_user_id } = req.body || {}
 
+  if (!booking_id) {
+    return res.status(400).json({ message: 'booking_id is required.' })
+  }
+
+  checkApprovedAdmin(admin_user_id, (adminErr, ok, statusCode, message) => {
+    if (adminErr) return res.status(500).json({ message: 'Failed to check admin permission.' })
+    if (!ok) return res.status(statusCode).json({ message })
+
+    const findSql = `SELECT * FROM bookings WHERE id = ?`
+    db.query(findSql, [booking_id], (findErr, results) => {
+      if (findErr) return res.status(500).json({ message: 'Failed to find booking.' })
+      if (results.length === 0) return res.status(404).json({ message: 'Booking not found.' })
+
+      const booking = results[0]
+
+      const updateSql = `
+        UPDATE bookings
+        SET status = 'cancelled', band_confirmation_status = 'released',
+            released_at = CURRENT_TIMESTAMP,
+            release_reason = 'Cancelled by admin override'
+        WHERE id = ?
+      `
+      db.query(updateSql, [booking_id], (updateErr) => {
+        if (updateErr) return res.status(500).json({ message: 'Failed to cancel booking.' })
+
+        const { deleteBookingEvent } = require('./calendarService')
+        deleteBookingEvent(booking_id, () => { })
+
+        res.json({ message: 'Booking cancelled successfully.', booking_id })
+      })
+    })
+  })
+})
 
 
 // admin manually close bidding for a targetweek
@@ -604,11 +639,12 @@ router.post('/run-allocation', (req, res) => {
       })
     })
 
-    // sort slots by date/time so allocation is deterministic except random ties
     const sortedSlots = Object.values(slots).sort((a, b) => {
-      if (a.slot_date !== b.slot_date) {
-        return a.slot_date.localeCompare(b.slot_date)
-      }
+      const totalA = a.all_bids.reduce((sum, bid) => sum + Number(bid.effective_bid_value), 0)
+      const totalB = b.all_bids.reduce((sum, bid) => sum + Number(bid.effective_bid_value), 0)
+      if (totalB !== totalA) return totalB - totalA // highest demand first
+      // tiebreak by date/time for determinism
+      if (a.slot_date !== b.slot_date) return a.slot_date.localeCompare(b.slot_date)
       return String(a.slot_time).localeCompare(String(b.slot_time))
     })
 

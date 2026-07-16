@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import API_URL from '../config'
-import Mascot from '../assets/mascot.svg'
+import Band from '../assets/band.svg'
 import { Card, Button, Spinner, Badge, SectionLabel, FormError } from '../components/UI'
 import { getBookingDateStr } from '../components/dateutils'
 import SettingsTab from '../components/SettingsTab'
@@ -196,7 +196,7 @@ function Leader({ user, effectsProps }) {
 
         {/* header card */}
         <Card className="p-6 text-center mb-6">
-          <img src={Mascot} alt="JukeBox mascot" className="w-32 mx-auto mb-3" />
+          <img src={Band} alt="Band" className="w-32 mx-auto mb-3" />
           <p className="text-xs text-navy opacity-50 mb-1">Good to see you,</p>
           <h1 className="text-2xl font-medium text-navy">{me.username} 🎸</h1>
           <p className="text-xs text-navy opacity-40 mt-1 mb-1">Band leader</p>

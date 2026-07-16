@@ -1,4 +1,3 @@
-
 const telegramBot = require('node-telegram-bot-api');
 const teleToken = process.env.TELEGRAMBOT_TOKEN;
 const telegramEnabled = process.env.ENABLE_TELEGRAMBOT === 'true';
@@ -6,9 +5,9 @@ const bot = new telegramBot(teleToken);
 const baseUrl = 'https://jukebox-booking-system.onrender.com';
 
 if (telegramEnabled && baseUrl) {
-    bot.setWebHook(`${baseUrl}/bot${teleToken}`)
-        .then(() => console.log('Webhook set:', `${baseUrl}/bot${teleToken}`))
-        .catch(err => console.error('setWebHook failed:', err));
+  bot.setWebHook(`${baseUrl}/bot${teleToken}`)
+    .then(() => console.log('Webhook set:', `${baseUrl}/bot${teleToken}`))
+    .catch(err => console.error('setWebHook failed:', err));
 } else {
   console.log('Telegram webhook not set (disabled or no base URL).');
 }
@@ -28,33 +27,42 @@ bot.on('error', err => {
 if (telegramEnabled) {
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, "Welcome to Jukebox Booking System's notification bot! Please reply with your NUS email to enable notifications!");
-});
+  });
 
-bot.on('message', (msg) => {
-  if (msg.text === '/start') return; 
-  const format = /^e\d{7}@u\.nus\.edu$/
+  bot.on('message', (msg) => {
+    if (msg.text === '/start') return;
+    const format = /^e\d{7}@u\.nus\.edu$/
 
-  if (format.test(msg.text)) {
-    const db = require('./db')
-    db.query(
-      'UPDATE users SET telegram_chat_id = ? WHERE email = ?',
-      [msg.chat.id, msg.text],
-      (err, result) => {
-        if (err || result.affectedRows === 0) {
-          bot.sendMessage(msg.chat.id, 'Email not found. Please ensure you have signed up and your account has been approved by the admin.')
-        } else {
-          bot.sendMessage(msg.chat.id, 'Account linked! You will now receive booking notifications here.')
+    if (format.test(msg.text)) {
+      const db = require('./db')
+      db.query(
+        'UPDATE users SET telegram_chat_id = ? WHERE email = ?',
+        [msg.chat.id, msg.text],
+        (err, result) => {
+          if (err || result.affectedRows === 0) {
+            bot.sendMessage(msg.chat.id, 'Email not found. Please ensure you have signed up and your account has been approved by the admin.')
+          } else {
+            bot.sendMessage(msg.chat.id, 'Account linked! You will now receive booking notifications here.')
+          }
         }
-      }
-    )
-  } else {
-    bot.sendMessage(msg.chat.id, 'Invalid email format. Please use your NUS email (e.g. e1234567@u.nus.edu)')
-  }
-})
+      )
+    } else {
+      bot.sendMessage(msg.chat.id, 'Invalid email format. Please use your NUS email (e.g. e1234567@u.nus.edu)')
+    }
+  })
 }
 
 function sendMessage(chatId, message) {
   return bot.sendMessage(chatId, message, { parse_mode: 'HTML' })
+}
+
+function formatDate(slotDate) {
+  if (slotDate instanceof Date) return slotDate.toISOString().split('T')[0]
+  return String(slotDate).slice(0, 10)
+}
+
+function formatTime(slotTime) {
+  return String(slotTime).slice(0, 5)
 }
 
 function BiddingOpen(chatId, bandName) {
@@ -69,27 +77,27 @@ function BiddingDeadlineReminder(chatId, bandName) {
 
 function SlotConfirmed(chatId, bandName, slotDate, slotTime) {
   sendMessage(chatId,
-    `✅ <b>Slot Confirmed!</b>\n\nHi ${bandName}, your booking for <b>${slotDate} ${slotTime}</b> has been confirmed! 🎸`)
+    `✅ <b>Slot Confirmed!</b>\n\nHi ${bandName}, your booking for <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> has been confirmed! 🎸`)
 }
 
 function ConfirmationReminder(chatId, bandName, slotDate, slotTime) {
   sendMessage(chatId,
-    `⏰ <b>Confirmation Reminder!</b>\n\nHi ${bandName}, please confirm your slot for <b>${slotDate} ${slotTime}</b>.\n\n⚠️ If not confirmed, the slot will be <b>automatically released</b>!`)
+    `⏰ <b>Confirmation Reminder!</b>\n\nHi ${bandName}, please confirm your slot for <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b>.\n\n⚠️ If not confirmed, the slot will be <b>automatically released</b>!`)
 }
 
 function PoolSlotAvailable(chatId, username, slotDate, slotTime) {
   sendMessage(chatId,
-    `🎵 <b>A Slot Just Opened Up!</b>\n\nHi ${username}, <b>${slotDate} ${slotTime}</b> is now available for self-practice. Open the app to grab it before someone else does! 👉`)
+    `🎵 <b>A Slot Just Opened Up!</b>\n\nHi ${username}, <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> is now available for self-practice. Open the app to grab it before someone else does! 👉`)
 }
 
 function SlotReleased(chatId, bandName, slotDate, slotTime) {
   sendMessage(chatId,
-    `❌ <b>Slot Released</b>\n\nHi ${bandName}, unfortunately, your slot on <b>${slotDate} ${slotTime}</b> has been released back to the pool as it was not confirmed in time.`)
+    `❌ <b>Slot Released</b>\n\nHi ${bandName}, unfortunately, your slot on <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> has been released back to the pool as it was not confirmed in time.`)
 }
 
 function BandSlotConfirmedMember(chatId, username, bandName, slotDate, slotTime) {
   sendMessage(chatId,
-    `✅ <b>Your Band Got a Slot!</b>\n\nHi ${username}, <b>${bandName}</b> has been allocated <b>${slotDate} ${slotTime}</b>. See you at practice! 🎸`)
+    `✅ <b>Your Band Got a Slot!</b>\n\nHi ${username}, <b>${bandName}</b> has been allocated <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b>. See you at practice! 🎸`)
 }
 
 function BookingOpen(chatId, username) {
@@ -99,27 +107,27 @@ function BookingOpen(chatId, username) {
 
 function SlotDisplaced(chatId, username, slotDate, slotTime) {
   sendMessage(chatId,
-    `⚠️ <b>Extra Slot Taken</b>\n\nHi ${username}, your extra slot on <b>${slotDate} ${slotTime}</b> has been claimed by another user who had no primary slot.\n\nPlease rebook a new slot!`)
+    `⚠️ <b>Extra Slot Taken</b>\n\nHi ${username}, your extra slot on <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> has been claimed by another user who had no primary slot.\n\nPlease rebook a new slot!`)
 }
 
 function SlotReminder(chatId, username, slotDate, slotTime) {
   sendMessage(chatId,
-    `⏰ <b>Reminder!</b>\n\nHi ${username}, your session starts in <b>15 minutes</b>!\n📅 ${slotDate} ${slotTime}`)
+    `⏰ <b>Reminder!</b>\n\nHi ${username}, your session starts in <b>15 minutes</b>!\n📅 ${formatDate(slotDate)} ${formatTime(slotTime)}`)
 }
 
 function DayBeforeReminder(chatId, name, slotDate, slotTime) {
   sendMessage(chatId,
-    `📅 <b>Practice Tomorrow!</b>\n\nHi ${name}, just a reminder that you have a session tomorrow at <b>${slotTime}</b> (${slotDate}). See you there! 🎶`)
+    `📅 <b>Practice Tomorrow!</b>\n\nHi ${name}, just a reminder that you have a session tomorrow at <b>${formatTime(slotTime)}</b> (${formatDate(slotDate)}). See you there! 🎶`)
 }
 
 function BookingCancelled(chatId, username, slotDate, slotTime) {
   sendMessage(chatId,
-    `🗑️ <b>Booking Cancelled</b>\n\nHi ${username}, your booking on <b>${slotDate} ${slotTime}</b> has been cancelled and the slot returned to the pool.`)
+    `🗑️ <b>Booking Cancelled</b>\n\nHi ${username}, your booking on <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> has been cancelled and the slot returned to the pool.`)
 }
 
 function IndividualBookingConfirmed(chatId, username, slotDate, slotTime, slotCategory) {
   sendMessage(chatId,
-    `✅ <b>Slot Booked!</b>\n\nHi ${username}, your <b>${slotCategory}</b> self-practice slot on <b>${slotDate} ${slotTime}</b> is confirmed. 🎵`)
+    `✅ <b>Slot Booked!</b>\n\nHi ${username}, your <b>${slotCategory}</b> self-practice slot on <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> is confirmed. 🎵`)
 }
 
 function Dehumidifier(chatId, username) {
@@ -139,27 +147,32 @@ function AccountApproved(chatId, username) {
 
 function AdminSlotReleased(chatId, slotDate, slotTime, bandName) {
   sendMessage(chatId,
-    `🔔 <b>Slot Released</b>\n\nThe slot on <b>${slotDate} ${slotTime}</b> held by <b>${bandName}</b> has been released back to the pool.`)
+    `🔔 <b>Slot Released</b>\n\nThe slot on <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> held by <b>${bandName}</b> has been released back to the pool.`)
 }
 
 function AdminDehumidifierMissing(chatId, username, slotDate) {
   sendMessage(chatId,
-    `⚠️ <b>Missing Dehumidifier Photo!</b>\n\nThe last user <b>${username}</b> on <b>${slotDate}</b> has not submitted a dehumidifier photo after 30 minutes.\n\nPlease follow up!`)
+    `⚠️ <b>Missing Dehumidifier Photo!</b>\n\nThe last user <b>${username}</b> on <b>${formatDate(slotDate)}</b> has not submitted a dehumidifier photo after 30 minutes.\n\nPlease follow up!`)
 }
 
 function HumidifierFlagged(chatId, name, slotDate, slotTime) {
   sendMessage(chatId,
-    `⚠️ <b>Humidifier Photo Flagged!</b>\n\nHi ${name}, admin has flagged your humidifier photo for <b>${slotDate} ${slotTime}</b> as incorrect.\n\nPlease log in and replace it with a clearer photo. Thank you! 🎸`)
+    `⚠️ <b>Humidifier Photo Flagged!</b>\n\nHi ${name}, admin has flagged your humidifier photo for <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> as incorrect.\n\nPlease log in and replace it with a clearer photo. Thank you! 🎸`)
 }
 
 function BidLost(chatId, bandName, slotDate, slotTime, reason) {
   sendMessage(chatId,
-    `❌ <b>Bid Not Successful</b>\n\nHi ${bandName}, your bid for <b>${slotDate} ${slotTime}</b> was unsuccessful.\n\nReason: <b>${reason}</b>\n\nBetter luck next week! 🎸`)
+    `❌ <b>Bid Not Successful</b>\n\nHi ${bandName}, your bid for <b>${formatDate(slotDate)} ${formatTime(slotTime)}</b> was unsuccessful.\n\nReason: <b>${reason}</b>\n\nBetter luck next week! 🎸`)
 }
 
 function AdminNewUserPending(chatId, username, email) {
   sendMessage(chatId,
     `🔔 <b>New User Pending Approval!</b>\n\n<b>${username}</b> (${email}) has just signed up and is waiting for approval.\n\nPlease log in to the admin panel to approve or reject.`)
+}
+
+function AdminRunAllocationReminder(chatId) {
+  sendMessage(chatId,
+    `🎯 <b>Time to Run Allocation!</b>\n\nThe bidding window has just closed. Please log in to the admin panel and run the allocation algorithm to assign slots for next week.`)
 }
 
 module.exports = {
@@ -185,5 +198,6 @@ module.exports = {
   DayBeforeReminder,
   BookingCancelled,
   HumidifierFlagged,
-  BidLost
+  BidLost,
+  AdminRunAllocationReminder
 }

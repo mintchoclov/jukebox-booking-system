@@ -523,7 +523,7 @@ function Admin({ user, effectsProps }) {
         <div className="bg-cream border-b border-beige">
           <div className="max-w-5xl mx-auto px-6 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <img src={AdminPic} alt="admin" className="w-50 h-20 -mr-10" />
+              <img src={AdminPic} alt="admin" className="w-20 h-20 -mr-2" />
               <h1 className="text-2xl font-medium text-navy">Admin Panel</h1>
             </div>
             <div className="flex items-center gap-2">
@@ -596,7 +596,7 @@ function Admin({ user, effectsProps }) {
                 {[
                   { num: confirmedBookings.length, label: 'Confirmed slots', tab: 'bookings', border: '#8DAB57', color: '#5B7B36', labelColor: '#788C5A' },
                   { num: pendingUsers.length, label: 'Pending users', tab: 'users', border: '#E0A93E', color: '#B07A18', labelColor: '#A98A52' },
-                  { num: bids.length, label: 'Bids submitted', tab: 'bidding', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
+                  { num: allocationRun && allocation.filter(a => a.status === 'suggested').length === 0 ? 0 : bids.length, label: 'Bids submitted', tab: 'bidding', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
                   { num: allBands.length, label: 'Active bands', tab: 'users', border: '#C97A9A', color: '#B0557A', labelColor: '#A87487' },
                 ].map((stat, i) => (
                   <Card key={i} className="p-4 text-center cursor-pointer hover:opacity-80 transition-opacity"
@@ -747,6 +747,27 @@ function Admin({ user, effectsProps }) {
                       <p className="text-xs text-navy mt-2 italic">📝 {selectedBooking.notes}</p>
                     )}
                   </div>
+                  {selectedBooking.status === 'confirmed' && (
+                    <button
+                      onClick={() => {
+                        if (!window.confirm('Cancel this booking and return slot to pool?')) return
+                        fetch(`${API_URL}/api/admin/delete-booking`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ booking_id: selectedBooking.id, admin_user_id: user.id })
+                        })
+                          .then(res => res.json())
+                          .then(() => {
+                            setSelectedBooking(null)
+                            fetchAll()
+                          })
+                          .catch(() => setError('Failed to cancel booking'))
+                      }}
+                      className="text-xs text-dangerText opacity-60 hover:opacity-100 mt-3 block"
+                    >
+                      Cancel booking (return to pool)
+                    </button>
+                  )}
                 </Card>
               )}
 

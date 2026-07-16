@@ -253,7 +253,29 @@ export default function SettingsTab({ user, me, effectsProps = {}, role, myBands
                                 <p className="text-sm font-medium text-navy">Telegram bot</p>
                                 <p className="text-xs text-navy opacity-50 mt-1">Notifications linked ✓</p>
                             </div>
-                            <Badge variant="success">Active</Badge>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="success">Active</Badge>
+                                <button
+                                    onClick={() => {
+                                        if (!window.confirm('Unlink Telegram? You will stop receiving notifications until you re-link.')) return
+                                        fetch(`${API_URL}/api/auth/unlink-telegram`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ user_id: user.id })
+                                        })
+                                            .then(res => res.json())
+                                            .then(() => {
+                                                const stored = JSON.parse(localStorage.getItem('user') || '{}')
+                                                localStorage.setItem('user', JSON.stringify({ ...stored, telegram_chat_id: null }))
+                                                window.location.reload()
+                                            })
+                                            .catch(() => { })
+                                    }}
+                                    className="text-xs text-dangerText opacity-60 hover:opacity-100"
+                                >
+                                    Unlink
+                                </button>
+                            </div>
                         </Card>
                     )}
                 </div>
