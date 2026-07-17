@@ -520,6 +520,16 @@ router.post('/reset-password', (req, res) => {
     }
   )
 })
-
+router.get('/me', (req, res) => {
+  const { user_id } = req.query
+  if (!user_id) return res.status(400).json({ message: 'user_id required' })
+  db.query('SELECT * FROM users WHERE id = ?', [user_id], (err, results) => {
+    if (err) return res.status(500).json({ message: 'DB error' })
+    if (results.length === 0) return res.status(404).json({ message: 'User not found' })
+    const user = results[0]
+    delete user.password
+    res.json(user)
+  })
+})
 
 module.exports = router
