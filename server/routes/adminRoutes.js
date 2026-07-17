@@ -654,6 +654,11 @@ router.post('/run-allocation', (req, res) => {
 
     const response = []
     const bidResultUpdates = []
+    // MS3: bids on a slot where EVERY candidate already hit the 2-slot
+    // weekly cap ("No eligible band" / "No band" on the allocation grid)
+    // don't get a normal won/lost UPDATE — they get deleted outright,
+    // since there's no winner and nothing meaningful to keep on record.
+    const unallocatedBidIds = []
 
     sortedSlots.forEach((slot) => {
       // Sort candidates by score desc, then preference rank asc
@@ -2391,7 +2396,43 @@ router.post('/reject-user', (req, res) => {
 
 
 
+router.post('/reset-allocation', (req, res) => {
+  const { target_week_monday, admin_user_id } = req.body
 
+  checkApprovedAdmin(admin_user_id, (adminErr, ok, statusCode, message) => {
+    if (adminErr) return res.status(500).json({ message: 'Failed to check admin.' })
+    if (!ok) return res.status(statusCode).json({ message })
+
+    const cancelSql = `
+      UPDATE bookings
+      SET status = 'cancelled', band_confirmation_status = 'released',
+          released_at = CURRENT_TIMESTAMP,
+          release_reason = 'Reset by admin'
+      WHERE booking_type = 'band'
+        AND status = 'confirmed'
+        AND slot_date BETWEEN ? AND DATE_ADD(?, INTERVAL 6 DAY)
+    `
+
+    db.query(cancelSql, [target_week_monday, target_week_monday], (cancelErr) => {
+      if (cancelErr) return res.status(500).json({ message: 'Failed to cancel bookings.' })
+
+      const revertSql = `
+        UPDATE bids
+        SET allocation_status = NULL,
+            reject_reason_category = NULL,
+            reject_reason = NULL,
+            allocation_run_at = NULL
+        WHERE slot_date BETWEEN ? AND DATE_ADD(?, INTERVAL 6 DAY)
+      `
+
+      db.query(revertSql, [target_week_monday, target_week_monday], (revertErr) => {
+        if (revertErr) return res.status(500).json({ message: 'Failed to revert bids.' })
+
+        res.json({ message: 'Allocation reset successfully.' })
+      })
+    })
+  })
+})
 
 
 // Admin rejects a booking
