@@ -47,6 +47,9 @@ function Admin({ user, effectsProps }) {
   const [holidayMode, setHolidayMode] = useState(false)
   const [overrideBandId, setOverrideBandId] = useState({}) 
   const [confirmingAll, setConfirmingAll] = useState(false) 
+  const [allocationConfirmed, setAllocationConfirmed] = useState(
+    () => localStorage.getItem(`allocationConfirmed_${getNextBiddingWeekMonday()}`) === 'true'
+  )
 
   const weekDates = getWeekDates(weekOffset)
   const bookingsWeekDates = getWeekDates(bookingsWeekOffset)
@@ -171,7 +174,9 @@ function Admin({ user, effectsProps }) {
     return bids
       .filter(b => {
         const bidDate = getBookingDateStr(b.slot_date)
-        return bidDate === dateStr && b.slot_time?.slice(0, 5) === time
+        return bidDate === dateStr &&
+          b.slot_time?.slice(0, 5) === time &&
+          b.allocation_status !== 'lost'
       })
       .reduce((sum, b) => sum + (b.bid_value || 0), 0)
   }
@@ -333,7 +338,12 @@ function Admin({ user, effectsProps }) {
     for (const slot of suggested) {
       await confirmBooking(slot)
     }
+    setAllocation([])
+    setAllocationRun(false)
+    setAllocationConfirmed(true)  
+    localStorage.setItem(`allocationConfirmed_${biddingWeekStart}`, 'true') 
     setConfirmingAll(false)
+    fetchAll() 
   }
 
   function approveUser(userId) {
@@ -596,7 +606,7 @@ function Admin({ user, effectsProps }) {
                 {[
                   { num: confirmedBookings.length, label: 'Confirmed slots', tab: 'bookings', border: '#8DAB57', color: '#5B7B36', labelColor: '#788C5A' },
                   { num: pendingUsers.length, label: 'Pending users', tab: 'users', border: '#E0A93E', color: '#B07A18', labelColor: '#A98A52' },
-                  { num: allocationRun && allocation.filter(a => a.status === 'suggested').length === 0 ? 0 : bids.length, label: 'Bids submitted', tab: 'bidding', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
+                  { num: bids.filter(b => !b.allocation_status || b.allocation_status === 'pending').length, label: 'Bids submitted', tab: 'bidding', border: '#DC7A53', color: '#C8542E', labelColor: '#B07560' },
                   { num: allBands.length, label: 'Active bands', tab: 'users', border: '#C97A9A', color: '#B0557A', labelColor: '#A87487' },
                 ].map((stat, i) => (
                   <Card key={i} className="p-4 text-center cursor-pointer hover:opacity-80 transition-opacity"
@@ -867,7 +877,15 @@ function Admin({ user, effectsProps }) {
             <div>
               <div className="flex justify-between items-center mb-4">
                 <button
-                  onClick={() => { setWeekOffset(w => w - 1); setSelectedSlot(null) }}
+                  onClick={() => {
+                    const newOffset = weekOffset - 1
+                    setWeekOffset(newOffset)
+                    setSelectedSlot(null)
+                    setAllocation([])
+                    setAllocationRun(false)
+                    const newMonday = getDateStr(getWeekDates(newOffset)[0])
+                    setAllocationConfirmed(localStorage.getItem(`allocationConfirmed_${newMonday}`) === 'true')
+                  }}
                   disabled={weekOffset <= 0}
                   className={`text-xs px-3 py-1 rounded-full bg-beige text-navy ${weekOffset <= 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
                 >← Prev</button>
@@ -875,7 +893,15 @@ function Admin({ user, effectsProps }) {
                   {weekDates[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {weekDates[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </p>
                 <button
-                  onClick={() => { setWeekOffset(w => w + 1); setSelectedSlot(null) }}
+                  onClick={() => {
+                    const newOffset = weekOffset + 1
+                    setWeekOffset(newOffset)
+                    setSelectedSlot(null)
+                    setAllocation([])
+                    setAllocationRun(false)
+                    const newMonday = getDateStr(getWeekDates(newOffset)[0])
+                    setAllocationConfirmed(localStorage.getItem(`allocationConfirmed_${newMonday}`) === 'true')
+                  }}
                   className="text-xs px-3 py-1 rounded-full bg-beige text-navy"
                 >Next →</button>
               </div>
@@ -978,6 +1004,19 @@ function Admin({ user, effectsProps }) {
                         >
                           Override
                         </Button>
+                              <Button
+                                variant="muted"
+                                className="px-3 py-1 text-xs shrink-0"
+                                onClick={() => {
+                                  if (!window.confirm('Leave this slot unallocated and remove it from the queue?')) return
+                                  setAllocation(prev => prev.filter(a =>
+                                    !(a.slot_date === selectedSlot.alloc.slot_date && a.slot_time === selectedSlot.alloc.slot_time)
+                                  ))
+                                  setSelectedSlot(null)
+                                }}
+                              >
+                                Skip slot
+                              </Button>
                       </div>
                     </div>
                   )}
@@ -1074,9 +1113,56 @@ function Admin({ user, effectsProps }) {
               )}
 
               {error && <p className="text-dangerText text-xs mt-3">{error}</p>}
-              <Button variant="primary" className="px-8" onClick={runAllocation}>
-                Run Allocation Algorithm
-              </Button>
+              {(() => {
+                const weekConfirmed = confirmedBookings.filter(b => {
+                  const d = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+                  return d >= weekDates[0] && d <= weekDates[6] && b.status === 'confirmed' && b.booking_type === 'band'
+                })
+                const weekBids = bids.filter(b => {
+                  const d = new Date(getBookingDateStr(b.slot_date) + 'T12:00:00')
+                  return d >= weekDates[0] && d <= weekDates[6] &&
+                    (!b.allocation_status || b.allocation_status === 'pending')
+                })
+                const allAllocated =
+                  (weekBids.length > 0 && allocationRun && allocation.filter(a => a.status === 'suggested').length === 0)
+                  || (weekConfirmed.length > 0 && weekBids.length === 0)
+                return allAllocated ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs px-4 py-2 rounded-full font-medium" style={{ background: '#EAF3DE', color: '#27500A' }}>
+                      ✓ Allocation complete — all slots confirmed
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (!window.confirm('This will cancel all confirmed band bookings for this week and revert all bids. Are you sure?')) return
+                        fetch(`${API_URL}/api/admin/reset-allocation`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            target_week_monday: biddingWeekStart,
+                            admin_user_id: user.id
+                          })
+                        })
+                          .then(res => res.json())
+                          .then(() => {
+                            setAllocationConfirmed(false)
+                            localStorage.removeItem(`allocationConfirmed_${biddingWeekStart}`)
+                            setAllocation([])
+                            setAllocationRun(false)
+                            fetchAll()
+                          })
+                          .catch(() => setError('Failed to reset allocation'))
+                      }}
+                      className="text-xs text-navy opacity-40 hover:opacity-70"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                ) : (
+                  <Button variant="primary" className="px-8" onClick={runAllocation}>
+                    Run Allocation Algorithm
+                  </Button>
+                )
+              })()}
             </div>
           )}
 
