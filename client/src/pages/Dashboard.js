@@ -1,92 +1,64 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import API_URL from '../config'
+import Individual from './Individual'
+import Leader from './Leader'
+import Admin from './Admin'
 
 function Dashboard() {
   const navigate = useNavigate()
-
-  // store logged in user data
   const [user, setUser] = useState(null)
-
-  // store confirmed bookings for the week
-  const [bookings, setBookings] = useState([])
-
   const [loading, setLoading] = useState(true)
+  const [mousemoveEffects, setMousemoveEffects] = useState(
+    () => localStorage.getItem('mousemoveEffects') !== 'false'
+  )
+  const [clickEffects, setClickEffects] = useState(
+    () => localStorage.getItem('clickEffects') !== 'false'
+  )
 
-  // on page load, check if user is logged in and fetch bookings
+  function toggleMousemove(val) {
+    setMousemoveEffects(val)
+    localStorage.setItem('mousemoveEffects', String(val))
+  }
+
+  function toggleClick(val) {
+    setClickEffects(val)
+    localStorage.setItem('clickEffects', String(val))
+  }
+  const [darkMode, setDarkMode] = useState(
+    () => localStorage.getItem('darkMode') === 'true'
+  )
+
+  function toggleDarkMode(val) {
+    setDarkMode(val)
+    localStorage.setItem('darkMode', String(val))
+
+    if (val) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }
+  const effectsProps = { mousemoveEffects, clickEffects, toggleMousemove, toggleClick }
   useEffect(() => {
     const stored = localStorage.getItem('user')
-
-    // redirect to login if not logged in
     if (!stored) {
       navigate('/login')
       return
     }
-
     const userData = JSON.parse(stored)
     setUser(userData)
-
-    // fetch all confirmed bookings to display on dashboard
-    fetch(`${API_URL}/api/admin/bookings`)
-      .then(res => res.json())
-      .then(data => {
-        setBookings(data)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    setLoading(false)
   }, [])
-
-  // clear localStorage and redirect to login
-  function handleLogout() {
-    localStorage.removeItem('user')
-    navigate('/login')
-  }
 
   if (loading) return <p>Loading...</p>
   if (!user) return null
 
-  return (
-    <div>
-      <h1>Welcome, {user.username}!</h1>
-      <p>Role: {user.role}</p>
+  if (user.role === 'band') return <Leader user={user} effectsProps={effectsProps} />
+  if (user.role === 'individual') return <Individual user={user} effectsProps={effectsProps} />
+  if (user.role === 'admin') return <Admin user={user} effectsProps={effectsProps} />
 
-      {/* confirmed bookings section */}
-      <h2>Confirmed Bookings This Week</h2>
-      {bookings.length === 0 ? (
-        <p>No confirmed bookings yet</p>
-      ) : (
-        bookings.map(booking => (
-          <div key={booking.id}>
-            <p>
-              {booking.band_name} —{' '}
-              {new Date(booking.slot_date).toLocaleDateString()} {booking.slot_time} —{' '}
-              {booking.status}
-            </p>
-          </div>
-        ))
-      )}
-
-      {/* action buttons based on user role */}
-      <h2>Actions</h2>
-
-      {/* only band users can submit bids */}
-      {user.role === 'band' && (
-        <button onClick={() => navigate('/bidding')}>Submit Bids</button>
-      )}
-
-      {/* all users can book self practice slots */}
-      <button onClick={() => navigate('/booking')}>Book Self Practice</button>
-
-      {/* only admin can access admin panel */}
-      {user.role === 'admin' && (
-        <button onClick={() => navigate('/admin')}>Admin Panel</button>
-      )}
-
-      <br /><br />
-      <button onClick={handleLogout}>Log Out</button>
-    </div>
-  )
+  return <div><h1>Dashboard</h1></div>
 }
 
 export default Dashboard

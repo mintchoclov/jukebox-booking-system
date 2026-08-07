@@ -1,8 +1,15 @@
-// MS2 basic version: this is an individual booking api
+// MS3 version: this is an individual booking api
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
-
+const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
+const notifications = require('../notifications')
+// photo-taking for humidifier
+const {
+    uploadHumidifierPhoto,
+    buildHumidifierPhotoUrl,
+    deleteUploadedFile
+} = require('../humidifierUpload')
 // valid 2-hour slot times
 const validSlotTimes = [
   '08:00',
@@ -55,31 +62,53 @@ function normalizeSlotTime(slotTime) {
   return slotTimeMap[cleanedSlotTime] || null
 }
 
-// helper function building slot date time:
-function buildSlotDateTime(slotDate, slotTime) {
-    const dateString = slotDate instanceof Date
-    ? slotDate.toISOString().slice(0, 10)
-    : String(slotDate).slice(0, 10)
-
-    const timeString = String(slotTime).slice(0, 5)
-    return new Date(`${dateString}T${timeString}:00`)
-}
-
 // function doing ddl checking: at least 72 hours before
 function isAtLeast72HrsBefore(slotDate, slotTime) {
-    const slotSart = buildSlotDateTime(slotDate, slotTime)
+    const slotStart = buildSlotDateTime(slotDate, slotTime)
     const now = new Date()
 
-    const diffMs = slotSart - now
+    const diffMs = slotStart - now
     const diffHrs = diffMs / (1000 * 60 * 60)
 
     return diffHrs >= 72
 }
 
-function getWeekRange(slotDate) {
-    const targetDate = new Date(slotDate)
 
-  // getDay(): Sunday = 0, Monday = 1 ......Saturday = 6
+// helper function building slot date time:
+function formatLocalDate(date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+}
+
+function parseMysqlDateOnly(dateValue) {
+    if (dateValue instanceof Date) {
+        return new Date(
+            dateValue.getFullYear(),
+            dateValue.getMonth(),
+            dateValue.getDate()
+        )
+    }
+
+    const dateString = String(dateValue).slice(0, 10)
+    const [year, month, day] = dateString.split('-').map(Number)
+
+    return new Date(year, month - 1, day)
+}
+
+function buildSlotDateTime(slotDate, slotTime) {
+    const dateObj = parseMysqlDateOnly(slotDate)
+    const dateString = formatLocalDate(dateObj)
+    const timeString = String(slotTime).slice(0, 5)
+
+    return new Date(`${dateString}T${timeString}:00`)
+}
+
+function getWeekRange(slotDate) {
+    const targetDate = parseMysqlDateOnly(slotDate)
+
     const day = targetDate.getDay()
     const daysSinceMonday = (day + 6) % 7
 
@@ -94,9 +123,35 @@ function getWeekRange(slotDate) {
     return { weekMonday, weekSunday }
 }
 
-// helper changing the date into mysql format
 function toMysqlDate(dateObj) {
-  return dateObj.toISOString().slice(0, 10)
+    return formatLocalDate(dateObj)
+}
+
+// help to return SGT
+function formatSgtDateTime(dateValue) {
+    const date = new Date(dateValue)
+
+    // Singapore is UTC+8, now only showing UTC
+    const sgtDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+
+    const year = sgtDate.getUTCFullYear()
+    const month = String(sgtDate.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(sgtDate.getUTCDate()).padStart(2, '0')
+    const hour = String(sgtDate.getUTCHours()).padStart(2, '0')
+    const minute = String(sgtDate.getUTCMinutes()).padStart(2, '0')
+    const second = String(sgtDate.getUTCSeconds()).padStart(2, '0')
+
+    return `${year}-${month}-${day} ${hour}:${minute}:${second} SGT`
+}
+// helper: used for individual edit username, has 14days cool down rule
+function cleanEditableName(value) {
+    return String(value || '').trim()
+}
+
+function addDays(dateValue, days) {
+    const date = new Date(dateValue)
+    date.setDate(date.getDate() + days)
+    return date
 }
 
 // self-practice booking opens Friday 12:00 AM for the following week.
@@ -113,9 +168,7 @@ function isSelfPracticeWindowOpen(slotDate) {
 
 
 
-
-
-
+// No.1
 //POST /api/individual/book
 router.post('/book', (req, res) => {
     const {
@@ -125,203 +178,360 @@ router.post('/book', (req, res) => {
     } = req.body
 
     const slot_time = normalizeSlotTime(req.body.slot_time)
+    const notes = req.body.notes ? String(req.body.notes).trim() : null
 
-    if (!user_id || !slot_date || !req.body.slot_time || !slot_category) {
+    // prevent individual from submitting long notes
+    if (notes && notes.length > 500) {
         return res.status(400).json({
-          message: 'user_id, slot_date, slot_time, and slot_category are required.'
+            message: 'Notes cannot exceed 500 characters.'
         })
     }
 
-    // validate slot_date, prevent frontend passing in invalid date
-    const parsedSlotDate = new Date(slot_date)
+    if (!user_id || !slot_date || !req.body.slot_time || !slot_category) {
+        return res.status(400).json({
+            message: 'user_id, slot_date, slot_time, and slot_category are required.'
+        })
+    }
 
+    // Validate slot_date
+    const parsedSlotDate = new Date(slot_date)
     if (Number.isNaN(parsedSlotDate.getTime())) {
         return res.status(400).json({
             message: 'Invalid slot_date.'
         })
     }
 
+    // Validate slot_category
     if (!['primary', 'extra'].includes(slot_category)) {
         return res.status(400).json({
-          message: 'slot_category must be primary or extra.'
+            message: 'slot_category must be primary or extra.'
         })
     }
 
+    // Validate slot_time
     if (!slot_time || !validSlotTimes.includes(slot_time)) {
         return res.status(400).json({
-          message: 'Invalid slot time. Slot must be a valid 2-hour block.'
+            message: 'Invalid slot time. Slot must be a valid 2-hour block.'
         })
     }
 
+    // Self-practice booking window: Friday 12am for following week
     if (!isSelfPracticeWindowOpen(slot_date)) {
         return res.status(400).json({
-          message: 'Self-practice booking window has not opened for this week.'
-        })
-      }
-
-    if (!isAtLeast72HoursBefore(slot_date, slot_time)) {
-        return res.status(400).json({
-          message: 'Self-practice bookings must be made at least 72 hours before the slot starts.'
+            message: 'Self-practice booking window has not opened for this week.'
         })
     }
 
-     const userSql = `
+    // 72-hour advance rule
+    if (!isAtLeast72HrsBefore(slot_date, slot_time)) {
+        return res.status(400).json({
+            message: 'Self-practice bookings must be made at least 72 hours before the slot starts.'
+        })
+    }
+
+    // Common insert SQL for confirmed individual booking, MS3 added the note taking
+    const insertSql = `
+        INSERT INTO bookings
+        (
+            band_id,
+            user_id,
+            booking_type,
+            slot_category,
+            slot_date,
+            slot_time,
+            status,
+            notes
+        )
+        VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed', ?)
+    `
+    // Step 1: Check user
+    const userSql = `
         SELECT
-          id,
-          username,
-          role,
-          status,
-          is_mr_certified
+            id,
+            username,
+            role,
+            status,
+            is_mr_certified
         FROM users
         WHERE id = ?
-     `
+    `
 
-     db.query(userSql, [user_id], (userErr, userResults) => {
+    db.query(userSql, [user_id], (userErr, userResults) => {
         if (userErr) {
-           console.error(userErr)
-           return res.status(500).json({
-             message: 'Failed to check user.'
-           })
+            console.error(userErr)
+            return res.status(500).json({
+                message: 'Failed to check user.'
+            })
         }
 
         if (userResults.length === 0) {
-           return res.status(404).json({
-             message: 'User not found.'
-           })
+            return res.status(404).json({
+                message: 'User not found.'
+            })
         }
 
         const user = userResults[0]
 
+        // Keep this check to prevent direct API calls by non-approved users
         if (user.status !== 'approved') {
-           return res.status(403).json({
-              message: 'Only approved users can book self-practice slots.'
-           })
+            return res.status(403).json({
+                message: 'Only approved users can book self-practice slots.'
+            })
         }
 
-        if (user.role !== 'individual') {
-           return res.status(403).json({
-              message: 'Only individual users can book self-practice slots.'
-           })
-        }
-
-        // this line maybe a bit extra? cuz every user should be ME-certified and approved by admin
+        // mr certification test(i think no need but for safety i still added)
+        // Even if someone calls the API directly, non-certified users cannot book.
         if (!user.is_mr_certified) {
-           return res.status(403).json({
-               message: 'Only MR-certified users can book self-practice slots.'
-           })
+            return res.status(403).json({
+                message: 'Only MR-certified users can book self-practice slots.'
+            })
         }
 
-        const checkSlotSql = `
-              SELECT *
-              FROM bookings
-              WHERE slot_date = ?
-                AND slot_time = ?
+        // Step 2: Check whether this user already has a primary slot this week
+        const { weekMonday, weekSunday } = getWeekRange(slot_date)
+
+        const primarySql = `
+            SELECT *
+            FROM bookings
+            WHERE user_id = ?
+                AND booking_type = 'individual'
+                AND slot_category = 'primary'
                 AND status = 'confirmed'
+                AND slot_date BETWEEN ? AND ?
         `
 
-        db.query(checkSlotSql, [slot_date, slot_time], (slotErr, existingBookings) => {
-              if (slotErr) {
-                console.error(slotErr)
-                return res.status(500).json({
-                  message: 'Failed to check slot availability.'
-                })
-              }
+        db.query(
+            primarySql,
+            [
+                user_id,
+                toMysqlDate(weekMonday),
+                toMysqlDate(weekSunday)
+            ],
+            (primaryErr, primaryResults) => {
+                if (primaryErr) {
+                    console.error(primaryErr)
+                    return res.status(500).json({
+                        message: 'Failed to check primary slot rule.'
+                    })
+                }
 
-               if (existingBookings.length > 0) {
-                  return res.status(400).json({
-                   message: 'This slot is already booked.'
-                  })
-               }
+                const userHasPrimary = primaryResults.length > 0
 
-               const { weekMonday, weekSunday} = getWeekRange(slot_date)
-               const primarySql = `
-                SELECT *
-                FROM bookings
-                WHERE user_id = ?
-                    AND booking_type = 'individual'
-                    AND slot_category = 'primary'
-                    AND status = 'confirmed'
-                    AND slot_date BETWEEN ? AND ?
-               `
+                // Rule 1: user cannot book second primary slot in the same week
+                if (slot_category === 'primary' && userHasPrimary) {
+                    return res.status(400).json({
+                        message: 'This user already has a primary slot for this week. Please try to book an extra slot instead.'
+                    })
+                }
 
-               db.query(
-                primarySql,
-                [
-                    user_id,
-                    toMysqlDate(weekMonday),
-                    toMysqlDate(weekSunday)
-                ],
-                (primaryErr, primaryResults) => {
-                    if(primaryErr) {
-                        console.error(primaryErr)
+                // Rule 2: user cannot book extra before having a primary
+                if (slot_category === 'extra' && !userHasPrimary) {
+                    return res.status(400).json({
+                        message: 'You must book a primary slot before booking extra slots for this week.'
+                    })
+                }
+
+                // Step 3: Check whether target slot is already occupied
+                const checkSlotSql = `
+                    SELECT *
+                    FROM bookings
+                    WHERE slot_date = ?
+                        AND slot_time = ?
+                        AND status = 'confirmed'
+                `
+
+                db.query(checkSlotSql, [slot_date, slot_time], (slotErr, existingBookings) => {
+                    if (slotErr) {
+                        console.error(slotErr)
                         return res.status(500).json({
-                            message: 'Failed to check primary slot rule.'
+                            message: 'Failed to check slot availability.'
                         })
                     }
 
-                    if (slot_category === 'primary' && primaryResults.length > 0) {
-                       return res.status(400).json({
-                           message: 'This user already has a primary slot for this week. Please try to book an extra slot instead.'
-                       })
+                    const existingBooking = existingBookings[0] || null
+
+                    // Case A: slot is empty, normal booking
+                    if (!existingBooking) {
+                        return db.query(
+                            insertSql,
+                            [
+                                user_id,
+                                slot_category,
+                                slot_date,
+                                slot_time,
+                                notes
+                            ],
+                            (insertErr, result) => {
+                                if (insertErr) {
+                                    console.error(insertErr)
+                                    return res.status(500).json({
+                                        message: 'Failed to create self-practice booking.'
+                                    })
+                                }
+
+                                createBookingEvent(result.insertId, (calendarErr, calendarResult) => {
+                                    if (calendarErr) {
+                                        console.error('Google Calendar sync failed:', calendarErr)
+
+                                        return res.json({
+                                            message: 'Self-practice booking confirmed successfully, but Google Calendar sync failed.',
+                                            booking_id: result.insertId,
+                                            status: 'confirmed',
+                                            slot_time,
+                                            calendar_sync_status: 'failed'
+                                        })
+                                    }
+                                    notifications.notifyIndividualBookingConfirmed(user_id, slot_date, slot_time, slot_category)
+
+                                    return res.json({
+                                        message: 'Self-practice booking confirmed successfully!',
+                                        booking_id: result.insertId,
+                                        status: 'confirmed',
+                                        slot_time,
+                                        notes,
+                                        calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+                                        google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+                                        google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+                                    })
+                                })
+                            }
+                        )
                     }
 
-                    if (slot_category === 'extra' && primaryResults.length === 0) {
-                       return res.status(400).json({
-                           message: 'You must book a primary slot before booking extra slots for this week.'
-                       })
+                    // Case B: band booking cannot be displaced
+                    if (existingBooking.booking_type === 'band') {
+                        return res.status(400).json({
+                            message: 'This slot is already booked by a band.'
+                        })
                     }
 
-                     const insertSql = `
-                          INSERT INTO bookings
-                          (
-                            band_id,
-                            user_id,
-                            booking_type,
-                            slot_category,
-                            slot_date,
-                            slot_time,
-                            status
-                          )
-                          VALUES (NULL, ?, 'individual', ?, ?, ?, 'confirmed')
-                     `
+                    // Case C: another user's primary slot cannot be displaced
+                    if (
+                        existingBooking.booking_type === 'individual' &&
+                        existingBooking.slot_category === 'primary'
+                    ) {
+                        return res.status(400).json({
+                            message: 'This slot is already booked as another user primary slot.'
+                        })
+                    }
 
-                      db.query(
-                         insertSql,
-                         [
-                           user_id,
-                           slot_category,
-                           slot_date,
-                           slot_time
-                         ],
-                         (insertErr, result) => {
-                            if (insertErr) {
-                               console.error(insertErr)
-                               return res.status(500).json({
-                                   message: 'Failed to create self-practice booking.'
-                               })
+                    // Case D: another user's extra slot can be displaced
+                    if (
+                        existingBooking.booking_type === 'individual' &&
+                        existingBooking.slot_category === 'extra'
+                    ) {
+                        // Only a user without primary can displace an extra slot,
+                        // and the new booking must be primary.
+                        if (slot_category !== 'primary' || userHasPrimary) {
+                            return res.status(400).json({
+                                message: 'This extra slot can only be displaced by a user without a primary slot.'
+                            })
+                        }
+
+                        const displaceSql = `
+                            UPDATE bookings
+                            SET status = 'displaced'
+                            WHERE id = ?
+                        `
+
+                        db.query(displaceSql, [existingBooking.id], (displaceErr) => {
+                            if (displaceErr) {
+                                console.error(displaceErr)
+                                return res.status(500).json({
+                                    message: 'Failed to displace existing extra booking.'
+                                })
                             }
 
-                            res.json({
-                                message: 'Self-practice booking confirmed successfully.',
-                                booking_id: result.insertId,
-                                slot_time
+                            // Notify the original owner that their extra slot was displaced.
+                            // Non-blocking: even if notification fails, booking should continue.
+                            try {
+                                notifications.notifySlotDisplaced(
+                                    existingBooking.user_id,
+                                    slot_date,
+                                    slot_time
+                                )
+                            } catch (e) {
+                                console.error('Notification error:', e)
+                            }
+
+                            // Delete old extra booking's Google Calendar event first.
+                            deleteBookingEvent(existingBooking.id, (deleteCalendarErr) => {
+                                if (deleteCalendarErr) {
+                                    console.error('Failed to delete displaced booking calendar event:', deleteCalendarErr)
+                                }
+
+                                // Then insert new primary booking.
+                                db.query(
+                                    insertSql,
+                                    [
+                                        user_id,
+                                        'primary',
+                                        slot_date,
+                                        slot_time,
+                                        notes
+                                    ],
+                                    (insertErr, result) => {
+                                        if (insertErr) {
+                                            console.error(insertErr)
+                                            return res.status(500).json({
+                                                message: 'Failed to create self-practice booking.'
+                                            })
+                                        }
+
+                                        // Create Google Calendar event for the new primary booking.
+                                        createBookingEvent(result.insertId, (createCalendarErr, calendarResult) => {
+                                            if (createCalendarErr) {
+                                                console.error('Google Calendar sync failed:', createCalendarErr)
+
+                                                return res.json({
+                                                    message: 'Extra slot displaced successfully! Primary booking confirmed, but Google Calendar sync failed.',
+                                                    displaced_booking_id: existingBooking.id,
+                                                    booking_id: result.insertId,
+                                                    status: 'confirmed',
+                                                    slot_category: 'primary',
+                                                    slot_time,
+                                                    notes,
+                                                    displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
+                                                    calendar_sync_status: 'failed'
+                                                })
+                                            }
+                                            notifications.notifyIndividualBookingConfirmed(user_id, slot_date, slot_time, 'primary')
+                                            return res.json({
+                                                message: 'Extra slot displaced successfully! Primary booking confirmed!',
+                                                displaced_booking_id: existingBooking.id,
+                                                booking_id: result.insertId,
+                                                status: 'confirmed',
+                                                slot_category: 'primary',
+                                                slot_time,
+                                                notes,
+                                                displaced_calendar_sync_status: deleteCalendarErr ? 'failed' : 'deleted_or_skipped',
+                                                calendar_sync_status: calendarResult && calendarResult.skipped ? 'skipped' : 'synced',
+                                                google_calendar_event_id: calendarResult ? calendarResult.event_id || null : null,
+                                                google_calendar_event_link: calendarResult ? calendarResult.htmlLink || null : null
+                                            })
+                                        })
+                                    }
+                                )
                             })
-                         }
-                      )
-                }
+                        })
+
+                        return
+                    }
+
+                    // Fallback
+                    return res.status(400).json({
+                        message: 'This slot is already booked.'
+                    })
+                })
+            }
         )
-     })
-   })
- })
+    })
+})
 
 
 
 
-
-
-
-
-
+// No.2
 //GET  /api/individual/view-my-bookings
 // individual user views their own self-practice bookings
 // phase 1 , directly book, directly insert in mysql and make status == confirmed
@@ -338,11 +548,15 @@ router.get('/view-my-bookings', (req, res) => {
         SELECT
             id,
             user_id,
-            booking_type,
+             booking_type,
             slot_category,
             slot_date,
             slot_time,
             status,
+            notes,
+            humidifier_photo_url,
+            humidifier_photo_uploaded_at,
+            humidifier_flagged,
             cancel_reason,
             cancelled_at,
             is_late_cancellation,
@@ -366,6 +580,124 @@ router.get('/view-my-bookings', (req, res) => {
 })
 
 
+// No.3
+// GET /api/individual/view-my-bands
+// User views all bands they belong to.
+// A user can belong to multiple bands.
+router.get('/view-my-bands', (req, res) => {
+    const { user_id } = req.query
+
+    if (!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required.'
+        })
+    }
+
+    const sql = `
+        SELECT
+            bands.id AS band_id,
+            bands.name AS band_name,
+            bands.band_type,
+            bands.leader_user_id,
+            leader.username AS leader_username,
+            band_members.member_role,
+            bands.is_active,
+            CASE
+                WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+                ELSE FALSE
+            END AS is_leader
+        FROM band_members
+        JOIN bands
+            ON band_members.band_id = bands.id
+        LEFT JOIN users AS leader
+            ON bands.leader_user_id = leader.id
+        WHERE band_members.user_id = ?
+            AND bands.is_active = TRUE
+        ORDER BY bands.name
+    `
+
+    db.query(sql, [user_id], (err, bands) => {
+        if (err) {
+            console.error(err)
+            return res.status(500).json({
+                message: 'Failed to fetch user bands.'
+            })
+        }
+
+        res.json(bands)
+    })
+})
+
+
+
+//No.4
+// GET /api/individual/view-my-band-bookings
+// user views confirmed band bookings for ALL bands they belong to.
+// user can belong to multiple bands.
+router.get('/view-my-band-bookings', (req, res) => {
+    const { user_id } = req.query
+
+    if (!user_id) {
+        return res.status(400).json({
+            message: 'user_id is required.'
+        })
+    }
+
+    const sql = `
+        SELECT
+            bookings.id AS booking_id,
+            bookings.band_id,
+            bands.name AS band_name,
+            bands.band_type,
+            bands.leader_user_id,
+            leader.username AS leader_username,
+
+            band_members.member_role,
+            CASE
+                WHEN bands.leader_user_id = band_members.user_id THEN TRUE
+                ELSE FALSE
+            END AS is_leader,
+
+            bookings.booking_type,
+            bookings.slot_category,
+            bookings.slot_date,
+            bookings.slot_time,
+            bookings.allocation_score,
+            bookings.status,
+            bookings.band_confirmation_status,
+            bookings.band_confirmation_deadline,
+            bookings.band_confirmed_at,
+            bookings.released_at,
+            bookings.release_reason,
+            bookings.created_at
+        FROM band_members
+        JOIN bands
+            ON band_members.band_id = bands.id
+        LEFT JOIN users AS leader
+            ON bands.leader_user_id = leader.id
+        JOIN bookings
+            ON bookings.band_id = bands.id
+        WHERE band_members.user_id = ?
+            AND bands.is_active = TRUE
+            AND bookings.booking_type = 'band'
+            AND bookings.status = 'confirmed'
+        ORDER BY
+            bands.name,
+            bookings.slot_date,
+            bookings.slot_time
+    `
+
+    db.query(sql, [user_id], (err, bookings) => {
+        if (err) {
+            console.error(err)
+            return res.status(500).json({
+                message: 'Failed to fetch band bookings.'
+            })
+        }
+
+        res.json(bookings)
+    })
+})
 
 
 
@@ -373,17 +705,17 @@ router.get('/view-my-bookings', (req, res) => {
 
 
 
-
-
-//POST /api/individual/cancel-booking
-// individual users cancel their own self-practice booking
-// phase 1: directly canceled by user, directly update in mysql, change the status to cancelled/ late-canceled
-// phase 2: get approved by admin and then cancel (wait to check out the documentation first)
+//NO.5
+// POST /api/individual/cancel-booking
+// Individual users cancel their own self-practice booking
+// Cancellation does NOT need admin approval.
+// If cancellation is less than 72 hours before the slot, it is logged as late_cancelled.
+router.post('/cancel-booking', (req, res) => {
     const {
         user_id,
         booking_id,
         cancel_reason
-    } = req.body
+    } = req.body || {}
 
     if (!user_id || !booking_id) {
         return res.status(400).json({
@@ -391,7 +723,7 @@ router.get('/view-my-bookings', (req, res) => {
         })
     }
 
-    // step 1: Find the booking and make sure it belongs to this user
+    // Step 1: Find the booking and make sure it belongs to this user
     const findSql = `
         SELECT *
         FROM bookings
@@ -422,8 +754,8 @@ router.get('/view-my-bookings', (req, res) => {
             })
         }
 
-        // step 2: Check 72-hour cancellation rule
-        const atLeast72HoursBefore = isAtLeast72HoursBefore(
+        // Step 2: Check 72-hour cancellation rule
+        const atLeast72HoursBefore = isAtLeast72HrsBefore(
             booking.slot_date,
             booking.slot_time
         )
@@ -431,7 +763,7 @@ router.get('/view-my-bookings', (req, res) => {
         const newStatus = atLeast72HoursBefore ? 'cancelled' : 'late_cancelled'
         const isLateCancellation = !atLeast72HoursBefore
 
-        // step 3: Update booking status
+        // Step 3: Update booking status
         const updateSql = `
             UPDATE bookings
             SET
@@ -461,18 +793,281 @@ router.get('/view-my-bookings', (req, res) => {
                     })
                 }
 
-                res.json({
-                    message: isLateCancellation
-                        ? 'Booking cancelled late and logged.'
-                        : 'Booking cancelled successfully and returned to pool.',
-                    booking_id,
-                    status: newStatus,
-                    is_late_cancellation: isLateCancellation,
-                    cancel_reason: cancel_reason || null
+                deleteBookingEvent(booking_id, (calendarErr, calendarResult) => {
+                    if (calendarErr) {
+                        console.error('Failed to delete Google Calendar event:', calendarErr)
+                    }
+                    notifications.notifyBookingCancelled(user_id, booking.slot_date, booking.slot_time)
+                    if (!isLateCancellation) {
+                        notifications.notifyPoolSlotAvailable(booking.slot_date, booking.slot_time)
+                    }
+                    return res.json({
+                        message: isLateCancellation
+                            ? 'Booking cancelled late and logged.'
+                            : 'Booking cancelled successfully and returned to pool.',
+                        booking_id,
+                        status: newStatus,
+                        is_late_cancellation: isLateCancellation,
+                        cancel_reason: cancel_reason || null,
+                        calendar_sync_status: calendarErr
+                            ? 'failed'
+                            : calendarResult && calendarResult.skipped
+                                ? 'skipped'
+                                : 'deleted'
+                    })
                 })
             }
         )
     })
 })
 
+
+// MS3 added api, individual change their own user name, only can change freely 1 time after setting, then got 2 weeks cool down
+// POST /api/individual/edit-username
+// Individual can change username freely once after signup.
+// After the first self-change, future self-changes require waiting 14 days.
+router.post('/edit-username', (req, res) => {
+    const {
+        user_id,
+        username
+    } = req.body || {}
+
+    const newUsername = cleanEditableName(username)
+
+    if (!user_id || !newUsername) {
+        return res.status(400).json({
+            message: 'user_id and username are required.'
+        })
+    }
+
+    if (newUsername.length > 255) {
+        return res.status(400).json({
+            message: 'Username cannot exceed 255 characters.'
+        })
+    }
+
+    const findUserSql = `
+        SELECT
+            id,
+            username,
+            role,
+            status,
+            username_change_count,
+            last_username_changed_at
+        FROM users
+        WHERE id = ?
+    `
+
+    db.query(findUserSql, [user_id], (findErr, userResults) => {
+        if (findErr) {
+            console.error(findErr)
+            return res.status(500).json({
+                message: 'Failed to find user.'
+            })
+        }
+
+        if (userResults.length === 0) {
+            return res.status(404).json({
+                message: 'User not found.'
+            })
+        }
+
+        const user = userResults[0]
+
+        if (user.status !== 'approved') {
+            return res.status(403).json({
+                message: 'Only approved users can edit their username.'
+            })
+        }
+
+        // This endpoint is only for individual self-service username change.
+        // Admin changes should use /api/admin/edit-username and are not restricted.
+        if (!['individual', 'band'].includes(user.role)) {
+            return res.status(403).json({
+                message: 'This username change rule only applies to individual and band users.'
+            })
+        }
+
+        if (user.username === newUsername) {
+            return res.json({
+                message: 'Username is already set to this value.',
+                user_id,
+                username: user.username,
+                username_change_count: user.username_change_count || 0,
+                last_username_changed_at: user.last_username_changed_at
+            })
+        }
+
+        const changeCount = user.username_change_count || 0
+        const lastChangedAt = user.last_username_changed_at
+
+        // First self-change is free.
+        // After that, user must wait 14 days from the last self-change.
+        if (changeCount >= 1 && lastChangedAt) {
+            const nextAllowedAt = addDays(lastChangedAt, 14)
+            const now = new Date()
+
+            if (now < nextAllowedAt) {
+               return res.status(400).json({
+                   message: 'You can only change your username once every 14 days after your first change.',
+                   last_username_changed_at: lastChangedAt,
+                   next_allowed_at: nextAllowedAt,
+                   last_username_changed_at_sgt: formatSgtDateTime(lastChangedAt),
+                   next_allowed_at_sgt: formatSgtDateTime(nextAllowedAt)
+               })
+            }
+        }
+
+        const updateSql = `
+            UPDATE users
+            SET
+                username = ?,
+                username_change_count = COALESCE(username_change_count, 0) + 1,
+                last_username_changed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `
+
+        db.query(updateSql, [newUsername, user_id], (updateErr) => {
+            if (updateErr) {
+                console.error(updateErr)
+                return res.status(500).json({
+                    message: 'Failed to update username.'
+                })
+            }
+
+            return res.json({
+                message: changeCount === 0
+                    ? 'Username updated successfully. This was your free username change.'
+                    : 'Username updated successfully.',
+                user_id,
+                old_username: user.username,
+                new_username: newUsername,
+                username_change_count: changeCount + 1,
+                last_username_changed_at: new Date()
+            })
+        })
+    })
+})
+
+
+// POST /api/individual/upload-humidifier-photo
+// Individual user uploads humidifier photo for their own self-practice booking
+// band's photo is inside bandRoutes
+
+router.post('/delete-humidifier-photo', (req, res) => {
+    const { user_id, booking_id } = req.body
+    if (!user_id || !booking_id) return res.status(400).json({ message: 'user_id and booking_id required.' })
+    const sql = `
+    UPDATE bookings
+    SET
+    humidifier_photo_url = NULL,
+    humidifier_photo_uploaded_at = NULL,
+    humidifier_flagged = 0
+    WHERE id = ?
+    AND user_id = ? 
+    AND booking_type = 'individual'
+  `
+    db.query(sql, [booking_id, user_id], (err, result) => {
+        if (err) return res.status(500).json({ message: 'Failed to delete photo.' })
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Booking not found.' })
+        res.json({ message: 'Photo deleted.' })
+    })
+})
+
+router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
+    const {
+        user_id,
+        booking_id
+    } = req.body || {}
+
+    if (!user_id || !booking_id) {
+        deleteUploadedFile(req.file)
+        return res.status(400).json({
+            message: 'user_id and booking_id are required.'
+        })
+    }
+
+    if (!req.file) {
+        return res.status(400).json({
+            message: 'photo is required.'
+        })
+    }
+
+    const findSql = `
+        SELECT
+            id,
+            user_id,
+            booking_type,
+            status,
+            slot_date,
+            slot_time,
+            humidifier_photo_url
+        FROM bookings
+        WHERE id = ?
+          AND booking_type = 'individual'
+    `
+
+    db.query(findSql, [booking_id], (findErr, results) => {
+        if (findErr) {
+            console.error(findErr)
+            deleteUploadedFile(req.file)
+            return res.status(500).json({
+                message: 'Failed to find booking.'
+            })
+        }
+
+        if (results.length === 0) {
+            deleteUploadedFile(req.file)
+            return res.status(404).json({
+                message: 'Individual booking not found.'
+            })
+        }
+
+        const booking = results[0]
+
+        if (Number(booking.user_id) !== Number(user_id)) {
+            deleteUploadedFile(req.file)
+            return res.status(403).json({
+                message: 'Only the booking owner can upload humidifier photo.'
+            })
+        }
+
+        if (booking.status !== 'confirmed') {
+            deleteUploadedFile(req.file)
+            return res.status(400).json({
+                message: 'Only confirmed bookings can upload humidifier photo.'
+            })
+        }
+
+        const photoUrl = buildHumidifierPhotoUrl(req.file)
+
+        const updateSql = `
+            UPDATE bookings
+            SET
+                humidifier_photo_url = ?,
+                humidifier_photo_uploaded_at = CURRENT_TIMESTAMP,
+                humidifier_flagged = 0
+            WHERE id = ?
+              AND user_id = ?
+              AND booking_type = 'individual'
+        `
+
+        db.query(updateSql, [photoUrl, booking_id, user_id], (updateErr) => {
+            if (updateErr) {
+                console.error(updateErr)
+                deleteUploadedFile(req.file)
+                return res.status(500).json({
+                    message: 'Failed to save humidifier photo.'
+                })
+            }
+
+            return res.json({
+                message: 'Congrats! Humidifier photo uploaded successfully.',
+                booking_id,
+                user_id,
+                humidifier_photo_url: photoUrl
+            })
+        })
+    })
+})
 module.exports = router

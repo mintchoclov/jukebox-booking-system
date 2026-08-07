@@ -1,163 +1,515 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import API_URL from '../config'
+import { Card, Button, SectionLabel, Spinner } from '../components/UI'
+import SlotGrid from '../components/Slotgrid'
+import { getWeekDates, getDateStr, getBookingDateStr } from '../components/dateutils'
+import { DAYS, TIMES, TIME_VALS, TIME_SLOTS, biddingLegendItems, getBiddingSlotStyle, getDemandLabel } from '../components/calendarstyle'
 
-// valid 2-hour time slots for the music room (8am to 12am)
-const timeSlots = [
-  { label: '8:00am - 10:00am', value: '08:00' },
-  { label: '10:00am - 12:00pm', value: '10:00' },
-  { label: '12:00pm - 2:00pm', value: '12:00' },
-  { label: '2:00pm - 4:00pm', value: '14:00' },
-  { label: '4:00pm - 6:00pm', value: '16:00' },
-  { label: '6:00pm - 8:00pm', value: '18:00' },
-  { label: '8:00pm - 10:00pm', value: '20:00' },
-  { label: '10:00pm - 12:00am', value: '22:00' },
-]
+function getBidPoints(bandType) {
+  switch (bandType) {
+    case 'cbtr': return [4, 3, 2] // performance band
+    case 'low_priority': return [2, 1, 0] // ad-hoc/senior only 2 choices
+    default: return [3, 2, 1] // standard band
+  }
+}
 
-// points assigned per rank based on bidding rules
-// standard band: 1st = 3pts, 2nd = 2pts, 3rd = 1pt
-const points = { 1: 3, 2: 2, 3: 1 }
+function getNextBiddingWeekMonday() {
+  const now = new Date()
+  const day = now.getDay()
+  const daysUntilMonday = (8 - day) % 7 || 7
+  const targetMonday = new Date(now)
+  targetMonday.setDate(now.getDate() + daysUntilMonday)
+  targetMonday.setHours(0, 0, 0, 0)
+
+  const deadline = new Date(targetMonday)
+  deadline.setDate(targetMonday.getDate() - 4)
+  deadline.setHours(12, 0, 0, 0)
+
+  if (now > deadline) {
+    targetMonday.setDate(targetMonday.getDate() + 7)
+  }
+
+  return getDateStr(targetMonday)
+}
 
 function Bidding() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+
+  const paramBandId = searchParams.get('band_id')
+  const activeBandId = paramBandId ? Number(paramBandId) : user.band_id 
+  
+  const [bids, setBids] = useState([])
+  const [submittedBids, setSubmittedBids] = useState([])
+  const [myBand, setMyBand] = useState(null)
+  const [blockedSlots, setBlockedSlots] = useState({})
+  const [confirmedSlots, setConfirmedSlots] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [biddingOpen, setBiddingOpen] = useState(false)
+  const bandType = myBand?.band_type || user.band_type || 'standard'
+  const bidPoints = getBidPoints(bandType)
+  const numChoices = bidPoints.length 
+  const targetWeekMonday = getNextBiddingWeekMonday()
 
-  // initial state for 3 ranked bids
-  const [bids, setBids] = useState([
-    { rank: 1, date: '', timeSlot: '' },
-    { rank: 2, date: '', timeSlot: '' },
-    { rank: 3, date: '', timeSlot: '' },
-  ])
+  const [myBids, setMyBids] = useState(
+  Array.from({ length: numChoices }, () => ({ day: '', time: '' }))
+)
+  const biddingWeekDates = Array.from({ length: 7 }, (_, i) => {
+    const [y, m, d] = targetWeekMonday.split('-').map(Number)
+    return new Date(y, m - 1, d + i, 12, 0, 0)
+  })
 
-  // update a specific bid's field (date or timeSlot) by rank
-  function updateBid(rank, field, value) {
-    setBids(bids.map(bid =>
-      bid.rank === rank ? { ...bid, [field]: value } : bid
-    ))
-  }
-
-  function handleSubmit(e) {
-    e.preventDefault()
-
-    // all 3 choices must be filled in
-    if (!bids[0].date || !bids[0].timeSlot ||
-        !bids[1].date || !bids[1].timeSlot ||
-        !bids[2].date || !bids[2].timeSlot) {
-      setError('Please fill in all 3 choices')
-      return
-    }
-
-    // prevent duplicate slots across the 3 choices
-    const slots = bids.map(b => `${b.date}-${b.timeSlot}`)
-    const unique = new Set(slots)
-    if (unique.size !== slots.length) {
-      setError('You cannot bid for the same slot twice')
-      return
-    }
-
-    // get logged in user from localStorage
-    const user = JSON.parse(localStorage.getItem('user'))
-    if (!user) {
+  useEffect(() => {
+    if (!user || !user.id) {
       navigate('/login')
       return
     }
 
-    // format bids to match backend expected structure
-    const formattedBids = bids.map(bid => ({
-      slot_date: bid.date,
-      slot_time: bid.timeSlot,
-      preference_rank: bid.rank,
-      bid_value: points[bid.rank]
-    }))
+    const weekMonday = getNextBiddingWeekMonday()
 
+    fetch(`${API_URL}/api/admin/bidding-status?target_week_monday=${weekMonday}`)
+      .then(res => res.json())
+      .then(data => setBiddingOpen(data.is_open))
+      .catch(() => {})
+
+    fetch(`${API_URL}/api/bids`)
+      .then(res => res.json())
+      .then(data => {
+        const allBids = Array.isArray(data) ? data : []
+        setBids(allBids)
+        setLoading(false)
+        const [y, m, d] = weekMonday.split('-').map(Number)
+        const weekDateStrs = Array.from({ length: 7 }, (_, i) =>
+          getDateStr(new Date(y, m - 1, d + i, 12, 0, 0))
+        )
+        const mine = allBids
+          .filter(b => Number(b.band_id) === Number(activeBandId))
+          .filter(b => weekDateStrs.includes(getBookingDateStr(b.slot_date)))
+          .map(b => ({
+            day: String(weekDateStrs.indexOf(getBookingDateStr(b.slot_date))),
+            time: String(TIME_SLOTS.findIndex(t => t.value === b.slot_time?.slice(0, 5)))
+          }))
+        setSubmittedBids(mine)
+      })
+      .catch(() => setLoading(false))
+
+    fetch(`${API_URL}/api/band/my-bands?user_id=${user.id}`)
+      .then(res => res.json())
+      .then(data => {
+        const bands = Array.isArray(data) ? data : []
+        const band = bands.find(b => Number(b.band_id) === Number(activeBandId))
+          || bands.find(b => b.is_leader || b.member_role === 'leader')
+          || bands[0]
+          || null
+        setMyBand(band)
+      })
+      .catch(() => { })
+
+    fetch(`${API_URL}/api/admin/bookings`)
+      .then(res => res.json())
+      .then(data => {
+        const confirmed = {}
+        const [y, m, d] = weekMonday.split('-').map(Number)
+        const weekDates = Array.from({ length: 7 }, (_, i) => {
+             return getDateStr(new Date(y, m - 1, d + i, 12, 0, 0))
+            })
+        Array.isArray(data) && data.forEach(b => {
+          if (b.status === 'confirmed' && b.booking_type === 'band') {
+            const dateStr = getBookingDateStr(b.slot_date)
+            const dayIdx = weekDates.indexOf(dateStr)
+            const timeIdx = TIME_SLOTS.findIndex(t => t.value === b.slot_time?.slice(0, 5))
+            if (dayIdx !== -1 && timeIdx !== -1) {
+              confirmed[`${dayIdx}_${timeIdx}`] = b.band_name || 'Band'
+            }
+          }
+        })
+        setConfirmedSlots(confirmed)
+      })
+      .catch(() => {})
+  }, [activeBandId])
+
+  function getTotalPts(dayIdx, timeIdx) {
+    const dateStr = biddingWeekDates[dayIdx] ? getDateStr(biddingWeekDates[dayIdx]) : ''
+    const time = TIME_SLOTS[timeIdx]?.value
+
+    const existing = bids
+      .filter(b => {
+        return getBookingDateStr(b.slot_date) === dateStr &&
+        b.slot_time?.slice(0, 5) === time
+      })
+      .reduce((sum, b) => sum + (b.bid_value || 0), 0)
+    return existing + getMyBidPts(dayIdx, timeIdx)
+  }
+
+  function getMyBidPts(dayIdx, timeIdx) {
+    const idx = myBids.findIndex(b => b.day === String(dayIdx) && b.time === String(timeIdx))
+    return idx === -1 ? 0 : bidPoints[idx]
+  }
+
+  function isMyBid(dayIdx, timeIdx) {
+    return myBids.some(b => b.day === String(dayIdx) && b.time === String(timeIdx))
+  }
+
+  function isSubmittedBid(dayIdx, timeIdx) {
+    return submittedBids.some(b => b.day === String(dayIdx) && b.time === String(timeIdx))
+  }
+
+  function getMyBidRank(dayIdx, timeIdx) {
+    return myBids.findIndex(b => b.day === String(dayIdx) && b.time === String(timeIdx))
+  }
+
+  function getBidsForSlot(dayIdx, timeIdx) {
+    const dateStr = biddingWeekDates[dayIdx] ? getDateStr(biddingWeekDates[dayIdx]) : ''
+    const time = TIME_SLOTS[timeIdx]?.value
+    return bids.filter(b => 
+      getBookingDateStr(b.slot_date) === dateStr &&
+      b.slot_time?.slice(0, 5) === time
+    )
+  }
+
+  function handleGetSlotStyle(di, ti) {
+    const mine = isMyBid(di, ti)
+    if (!mine && isSubmittedBid(di, ti)) {
+      return 'bg-beige/50 border border-beige text-navy opacity-50 cursor-pointer'
+    }
+    return getBiddingSlotStyle(
+      getTotalPts(di, ti),
+      !!blockedSlots[`${di}_${ti}`],
+      !!confirmedSlots[`${di}_${ti}`],
+      isMyBid(di, ti)
+    )
+  }
+  function handleGetSlotLabel(di, ti) {
+    const isBlocked = !!blockedSlots[`${di}_${ti}`]
+    const isConfirmed = !!confirmedSlots[`${di}_${ti}`]
+    const mine = isMyBid(di, ti)
+    const rank = getMyBidRank(di, ti)
+    const totalPts = getTotalPts(di, ti)
+    if (isBlocked) return '✕'
+    if (isConfirmed) return '✓'
+    if (mine) return ['1st', '2nd', '3rd'][rank] || ''
+    if (isSubmittedBid(di, ti)) return 'old'
+    if (totalPts > 0) return `${totalPts}pt`
+    return ''
+  }
+
+  function handleSlotClick(di, ti) {
+    if (!!blockedSlots[`${di}_${ti}`]) return
+    setSelectedSlot({ d: di, t: ti })
+
+    const existingIdx = myBids.findIndex(b => b.day === String(di) && b.time === String(ti))
+
+    if (existingIdx !== -1) {
+      const updated = [...myBids]
+      updated[existingIdx] = { day: '', time: '' }
+      setMyBids(updated)
+      return
+    }
+
+    const emptyIdx = myBids.findIndex(b => b.day === '' || b.time === '')
+    if (emptyIdx !== -1) {
+      const updated = [...myBids]
+      updated[emptyIdx] = { day: String(di), time: String(ti) }
+      setMyBids(updated)
+    }
+  }
+
+  function updateMyBid(i, field, val) {
+    const updated = [...myBids]
+    updated[i] = { ...updated[i], [field]: val }
+    setMyBids(updated)
+    if (updated[i].day !== '' && updated[i].time !== '') {
+      setSelectedSlot({ d: parseInt(updated[i].day), t: parseInt(updated[i].time) })
+    }
+  }
+
+  function canSubmit() {
+    const allFilled = myBids.every(b => b.day !== '' && b.time !== '')
+    const noDups = new Set(myBids.map(b => `${b.day}_${b.time}`)).size === numChoices
+    const noBlocked = myBids.every(b =>
+      b.day === '' || b.time === '' || !blockedSlots[`${b.day}_${b.time}`]
+    )
+    return allFilled && noDups && noBlocked
+  }
+
+
+  function getSubmitLabel() {
+    const allFilled = myBids.every(b => b.day !== '' && b.time !== '')
+    const noDups = new Set(myBids.map(b => `${b.day}_${b.time}`)).size === numChoices
+    if (!allFilled) return `Fill in all ${numChoices} choices to submit`
+    if (!noDups) return 'No duplicate slots allowed'
+    return 'Submit Bids'
+  }
+
+  function handleSubmit() {
+    if (!canSubmit()) return
+    setSubmitting(true)
+    setError('')
+
+    const bidsPayload = myBids.map((b, i) => ({
+      slot_date: getDateStr(biddingWeekDates[parseInt(b.day)]),
+      slot_time: TIME_VALS[parseInt(b.time)],
+      preference_rank: i + 1,
+      bid_value: bidPoints[i]
+    }))
     // submit weekly bids to backend
     fetch(`${API_URL}/api/bids/weekly`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        band_id: user.id,
-        bids: formattedBids
+        band_id: activeBandId,
+        user_id: user.id,
+        bids: bidsPayload
       })
     })
       .then(res => res.json())
       .then(data => {
-        if (data.message && data.message !== 'Weekly bids submitted successfully') {
-          setError(data.message)
+        setSubmitting(false)
+        console.log('REsponse from server:', data)
+        if (data.error || data.message) {
+          setError(data.error || data.message)
         } else {
           setSubmitted(true)
         }
       })
-      .catch(() => setError('Something went wrong. Please try again.'))
+      .catch(() => {
+      setSubmitting(false) 
+      setError('Something went wrong. Please try again.')})
   }
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-navy opacity-50 text-sm">Loading...</p>
+    </div>
+  )
+
+  if (!biddingOpen) return (
+    <div className="min-h-screen relative">
+      <div className="relative z-10 max-w-lg mx-auto px-4 py-8">
+        <Card className="p-8 text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h1 className="text-xl font-medium text-navy mb-2">Bidding not open yet</h1>
+          <p className="text-sm text-navy opacity-50 mb-6">
+            Admin hasn't opened the bidding window for next week yet. Check back later!
+          </p>
+          <Button variant="primary" className="w-full" onClick={() => navigate('/dashboard')}>
+            Back to Dashboard
+          </Button>
+        </Card>
+      </div>
+    </div>
+  )
 
   // show confirmation page after successful submission
-  if (submitted) {
-    return (
-      <div>
-        <h1>Bids Submitted!</h1>
-        <p>Your bids have been submitted. Results will be available after Thursday 12:00 PM.</p>
-        <h2>Your Bids</h2>
-        {bids.map(bid => (
-          <div key={bid.rank}>
-            <p>
-              Choice {bid.rank} ({points[bid.rank]} pts) —{' '}
-              {bid.date}, {timeSlots.find(t => t.value === bid.timeSlot)?.label}
-            </p>
-          </div>
-        ))}
-        <button onClick={() => navigate('/dashboard')}>Back to Dashboard</button>
+  if (submitted) return (
+    <div className="min-h-screen relative">
+      <div className="relative z-10 max-w-lg mx-auto px-4 py-8">
+        <Card className="p-8 text-center">
+          <div className="text-5xl mb-4">🎸</div>
+          <h1 className="text-xl font-medium text-navy mb-2">Bids submitted!</h1>
+          <p className="text-sm text-navy opacity-50 mb-2">{myBand?.band_name && `${myBand.band_name} — `} Your {numChoices} have been submitted.</p>
+          <p className="text-xs text-navy opacity-40 mb-6">
+            Results will be announced after the bidding window closes.
+          </p>
+          <Button variant="primary" className="w-full mb-3" onClick={() => navigate('/dashboard')}>
+            Back to Dashboard
+          </Button>
+          <Button variant="muted" className="w-full" onClick={() => {
+            setSubmitted(false)
+            setMyBids([{ day: '', time: '' }, { day: '', time: '' }, { day: '', time: '' }])
+          }}>
+            Edit Bids
+          </Button>
+        </Card>
       </div>
-    )
-  }
+    </div>
+  )
 
   return (
-    <div>
-      <h1>Submit Band Bids</h1>
-      <p>Bidding deadline: Thursday 12:00 PM</p>
-      <p>Rank your preferred slots. 1st choice = 3pts, 2nd = 2pts, 3rd = 1pt.</p>
-      <p>All 3 choices are required.</p>
+    <div className="min-h-screen relative">
+    <div className="relative z-10 max-w-2xl mx-auto px-4 py-8">
 
-      <form onSubmit={handleSubmit}>
-        {/* render each ranked bid input */}
-        {bids.map(bid => (
-          <div key={bid.rank}>
-            <h3>
-              {bid.rank === 1 ? '🥇' : bid.rank === 2 ? '🥈' : '🥉'}
-              Choice {bid.rank} — {points[bid.rank]} pts
-            </h3>
-
-            {/* date picker for this choice */}
-            <div>
-              <label>Date</label>
-              <input
-                type="date"
-                value={bid.date}
-                onChange={(e) => updateBid(bid.rank, 'date', e.target.value)}
-              />
-            </div>
-
-            {/* time slot dropdown for this choice */}
-            <div>
-              <label>Time Slot</label>
-              <select
-                value={bid.timeSlot}
-                onChange={(e) => updateBid(bid.rank, 'timeSlot', e.target.value)}
-              >
-                <option value="">Select a time slot</option>
-                {timeSlots.map(slot => (
-                  <option key={slot.value} value={slot.value}>{slot.label}</option>
-                ))}
-              </select>
-            </div>
+        {/* header */}
+        <Card className="p-6 text-center mb-6">
+          <h1 className="text-2xl font-medium text-navy mb-1">Submit Band Bids 🎸</h1>
+          {myBand?.band_name && (
+            <p className="text-sm font-medium text-navy mb-1">{myBand.band_name}</p>
+          )}
+          <p className="text-sm text-navy opacity-50">Rank your 3 preferred slots for next week</p>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              bandType === 'cbtr' ? 'bg-primary text-navy' :
+              bandType === 'low_priority' ? 'bg-beige text-navy' :
+              'bg-pink text-navy'
+            }`}>
+              {bandType === 'cbtr' ? 'Performance Band' :
+              bandType === 'low_priority' ? 'Ad-hoc / Senior Band' :
+              'Standard Band'}
+            </span>
+            <span className="text-xs text-navy opacity-40">
+              {bidPoints.join(' / ')} pts per choice
+            </span>
           </div>
-        ))}
+          <p className="text-xs text-navy opacity-40 mt-2">
+            {biddingWeekDates[0].toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {biddingWeekDates[6].toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </p>
+        </Card>
 
-        {error && <p style={{ color: 'red' }}>{error}</p>}
+        {/* calendar heatmap */}
+        <Card className="p-4 mb-6">
+          <SectionLabel>Next week's slots, click to inspect</SectionLabel>
+          <div className="flex flex-wrap gap-3 mb-4">
+            {biddingLegendItems.map((l, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: l.bg, border: `1px solid ${l.border}` }}></div>
+                <span className="text-xs text-navy opacity-50">{l.label}</span>
+              </div>
+            ))}
+          </div>
 
-        <button type="submit">Submit Bids</button>
-        <button type="button" onClick={() => navigate('/dashboard')}>Cancel</button>
-      </form>
+          <SlotGrid
+            weekDates={biddingWeekDates}
+            getSlotStyle={handleGetSlotStyle}
+            getSlotLabel={handleGetSlotLabel}
+            onSlotClick={handleSlotClick}
+            selectedSlot={selectedSlot}
+          />
+
+          {/* slot detail panel */}
+          {selectedSlot && (() => {
+            const { d, t } = selectedSlot
+            const key = `${d}_${t}`
+            const slotBids = getBidsForSlot(d, t)
+            const myPts = getMyBidPts(d, t)
+            const isConfirmed = !!confirmedSlots[key]
+            const isBlocked = !!blockedSlots[key]
+
+            return (
+              <div className="bg-primarySoft rounded-xl p-3 mt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-sm font-medium text-navy">
+                    {DAYS[d]} {biddingWeekDates[d]?.getDate()} · {TIMES[t]}
+                  </p>
+                  <button
+                    onClick={() => setSelectedSlot(null)}
+                    className="text-xs text-navy opacity-40"
+                  >✕</button>
+                </div>
+                {isBlocked ? (
+                  <p className="text-xs text-navy opacity-60">Blocked by admin — unavailable</p>
+                ) : isConfirmed ? (
+                  <p className="text-xs text-successText">Already confirmed: {confirmedSlots[key]}</p>
+                ) : slotBids.length === 0 && myPts === 0 ? (
+                  <p className="text-xs text-navy opacity-50">No bids yet</p>
+                ) : (
+                  <div>
+                    {myPts > 0 && (
+                      <div className="flex justify-between items-center py-1.5 border-b border-beige">
+                        <span className="text-xs font-medium text-navy">Your band (you)</span>
+                        <span className="text-xs bg-primary text-navy px-2 py-0.5 rounded-full">{myPts}pts</span>
+                      </div>
+                    )}
+                    {slotBids.map((b, i) => (
+                      <div key={i} className="flex justify-between items-center py-1.5 border-b border-beige last:border-0">
+                        <span className="text-xs text-navy">{b.band_name || 'Band'}</span>
+                        <span className="text-xs bg-beige text-navy px-2 py-0.5 rounded-full">{b.bid_value}pts</span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-navy opacity-40 mt-2">
+                      Total: {getTotalPts(d, t)}pts
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </Card>
+
+        {/* bid form */}
+        <Card className="p-5 mb-6">
+          <SectionLabel>Your 3 choices</SectionLabel>
+          {Array.from({ length: numChoices }, (_, i) => i).map(i => {
+            const bid = myBids[i]
+            const rankLabels = ['First choice', 'Second choice', 'Third choice']
+            const rankBg = ['bg-primary', 'bg-pink', 'bg-beige']
+            const pts = [3, 2, 1]
+            const hasSelection = bid.day !== '' && bid.time !== ''
+            let demandInfo = null
+            if (hasSelection) {
+              const d = parseInt(bid.day)
+              const t = parseInt(bid.time)
+              demandInfo = getDemandLabel(
+                getTotalPts(d, t),
+                !!blockedSlots[`${d}_${t}`],
+                !!confirmedSlots[`${d}_${t}`]
+              )
+            }
+
+            return (
+              <div key={i} className="mb-5 last:mb-0">
+                <div className="flex items-center mb-2">
+                  <span className={`w-6 h-6 rounded-full ${rankBg[i]} text-navy flex items-center justify-center text-xs font-medium mr-2 flex-shrink-0`}>
+                    {i + 1}
+                  </span>
+                  <span className="text-sm font-medium text-navy">{rankLabels[i]}</span>
+                  <span className="text-xs text-navy opacity-40 ml-auto">{pts[i]}pts</span>
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <select
+                    value={bid.day}
+                    onChange={e => updateMyBid(i, 'day', e.target.value)}
+                    className="flex-1 bg-cream border border-beige rounded-xl px-3 py-2 text-xs text-navy outline-none focus:border-primary"
+                  >
+                    <option value="">Day</option>
+                    {DAYS.map((d, di) => (
+                      <option key={di} value={di}>{d} {biddingWeekDates[di]?.getDate()}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={bid.time}
+                    onChange={e => updateMyBid(i, 'time', e.target.value)}
+                    className="flex-1 bg-cream border border-beige rounded-xl px-3 py-2 text-xs text-navy outline-none focus:border-primary"
+                  >
+                    <option value="">Time</option>
+                    {TIMES.map((t, ti) => (
+                      <option key={ti} value={ti}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                {demandInfo && (
+                  <div
+                    className="text-xs px-3 py-1.5 rounded-lg inline-block"
+                    style={{ background: demandInfo.bg, color: demandInfo.color }}
+                  >
+                    {demandInfo.label}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {error && <p className="text-dangerText text-xs mt-3">{error}</p>}
+          <Button
+            variant={canSubmit() ? 'primary' : 'muted'}
+            className="w-full mt-4 flex items-center justify-center gap-2"
+            onClick={handleSubmit}
+            disabled={!canSubmit() || submitting}
+          >
+            {submitting ? <><Spinner /> Submitting...</> : getSubmitLabel()}
+          </Button>
+        </Card>
+
+        <Button variant="ghost" className="w-full" onClick={() => navigate('/dashboard')}>
+          Back to Dashboard
+        </Button>
+
+      </div>
     </div>
   )
 }
