@@ -1,10 +1,9 @@
-const express = require('express') // use express framework
-const router = express.Router() // create router module
+const express = require('express') 
+const router = express.Router() 
 const db = require('../db')
 
 // helper function to sync with frontend slots
-// convert frontend time slot label into backend/MySQL start time format
-// e.g--> 8:00am - 10:00am -> "08:00"
+// convert frontend time slot label into backend/MySQL start time format 8:00am - 10:00am -> "08:00"
 function normalizeSlotTime(slotTime) {
    if (!slotTime) {
       return null
@@ -42,9 +41,6 @@ function normalizeSlotTime(slotTime) {
   return slotTimeMap[cleanedSlotTime] || null
 }
 
-
-
-
 // Valid timeslot --> even
   const validSlotTimes = [
     '08:00',
@@ -76,7 +72,6 @@ function getBidValueFromRank(rank, bandType) {
   return 0
 }
 
-
 // helper function checking whether the 3 submitted slots are of the same week
 // Format Date object as YYYY-MM-DD without timezone shifting
 function formatLocalDate(date) {
@@ -103,7 +98,6 @@ function parseMysqlDateOnly(dateValue) {
   return new Date(year, month - 1, day)
 }
 
-
 // helper function checking whether the 3 submitted slots are of the same week
 function getWeekRange(slotDate) {
   const targetDate = parseMysqlDateOnly(slotDate)
@@ -127,10 +121,6 @@ function toMysqlDate(dateObj) {
   return formatLocalDate(dateObj)
 }
 
-
-
-
-// NO.1
 // POST /api/bids
 // Single bid submission is disabled in MS2, prevent bands from submitting bids one by one
 // Band leaders must submit EXACTLY 3 ranked bids together through /api/bids/weekly.
@@ -140,12 +130,6 @@ router.post('/', (req, res) => {
   })
 })
 
-
-
-
-
-
-//NO.2
 // 提交一整周的 3 个 ranked bids
 // POST /api/bids/weekly
 router.post('/weekly', (req, res) => {
@@ -175,7 +159,7 @@ router.post('/weekly', (req, res) => {
   const seenSlots = new Set()
   const now = new Date()
 
-  // 1: validate each bid
+  // validate each bid
   for (const bid of bids) {
     const { slot_date, preference_rank } = bid
     const slot_time = normalizeSlotTime(bid.slot_time)
@@ -242,14 +226,14 @@ router.post('/weekly', (req, res) => {
     }
   }
 
-  // 2: check that ranks are exactly 1, 2, 3
+  // check that ranks are exactly 1, 2, 3
   if (!seenRanks.has(1) || !seenRanks.has(2) || !seenRanks.has(3)) {
     return res.status(400).json({
       message: 'Weekly bids MUST include rank 1, rank 2, and rank 3'
     })
   }
 
-  // 3: check all 3 bids are for the same target week
+  // check all 3 bids are for the same target week
   const firstWeek = getWeekRange(bids[0].slot_date)
   const firstWeekMonday = toMysqlDate(firstWeek.weekMonday)
 
@@ -267,7 +251,7 @@ router.post('/weekly', (req, res) => {
   const { weekMonday, weekSunday } = getWeekRange(bids[0].slot_date)
   const targetWeekMonday = toMysqlDate(weekMonday)
 
-  // 4: only the band leader can submit or edit weekly bids
+  // only the band leader can submit or edit weekly bids
   const leaderSql = `
     SELECT id, name, band_type
     FROM bands
@@ -290,7 +274,7 @@ router.post('/weekly', (req, res) => {
       })
     }
 
-    // 5: check whether admin manually closed bidding for this week
+    // check whether admin manually closed bidding for this week
     const biddingWindowSql = `
       SELECT status
       FROM bidding_windows
@@ -314,7 +298,7 @@ router.post('/weekly', (req, res) => {
         })
       }
 
-      // 6: check whether this band already submitted weekly bids
+      // check whether this band already submitted weekly bids
       const existingWeeklySql = `
         SELECT id
         FROM bids
@@ -337,7 +321,7 @@ router.post('/weekly', (req, res) => {
             })
           }
 
-          // 7: prepare insert SQL
+          // prepare insert SQL
           const insertSql = `
             INSERT INTO bids
             (band_id, slot_date, slot_time, preference_rank, bid_value)
@@ -354,7 +338,6 @@ router.post('/weekly', (req, res) => {
             getBidValueFromRank(bid.preference_rank, bandType)
           ])
 
-          // helper function: insert new 3 bids
           function insertWeeklyBids(isUpdate) {
             db.query(insertSql, [values], (insertErr, result) => {
               if (insertErr) {
@@ -381,7 +364,7 @@ router.post('/weekly', (req, res) => {
             })
           }
 
-          // 8: if old bids exist, allow edit before admin confirmation
+          // if old bids exist, allow edit before admin confirmation
           if (existingBids.length > 0) {
             const confirmedBookingSql = `
               SELECT id
@@ -449,13 +432,9 @@ router.post('/weekly', (req, res) => {
   })
 })
 
-
-//NO.3
 // 查看所有bids
 //GET /api/bids --> get all bids
 router.get('/', (req, res) => {
-
-// new version: admin can now see band_name(not only band_id)
   const sql = `
     SELECT
       bids.id,
@@ -496,8 +475,6 @@ router.get('/', (req, res) => {
   })
 })
 
-
-// NO.4
 // GET /api/bids/my-results?band_id=1
 // band sees its own bid allocation results and rejection reasons
 router.get('/my-results', (req, res) => {

@@ -4,9 +4,7 @@ const db = require('../db')
 const notifications = require('../notifications')
 
 
-// date helpers used by adminRoutes
 // avoid toISOString() timezone shifting problems
-// ---------------------------------------------------
 function formatLocalDate(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -33,7 +31,7 @@ function parseMysqlDateOnly(dateValue) {
 function getWeekRange(slotDate) {
   const targetDate = parseMysqlDateOnly(slotDate)
 
-  // getDay(): Sunday = 0, Monday = 1, ..., Saturday = 6
+  // getDay(): Sunday = 0, Monday = 1...
   const day = targetDate.getDay()
   const daysSinceMonday = (day + 6) % 7
 
@@ -88,8 +86,6 @@ function getBiddingDeadlineFromWeekMonday(targetWeekMonday) {
   return deadline
 }
 
-//-------------------------------------------------------
-// helpers: match the band type in front-end to backend(due to diff string used)
 function normalizeBandType(bandType) {
   if (!bandType) {
     return 'standard'
@@ -136,7 +132,7 @@ function getBandConfirmationDeadline(slotDate, slotTime) {
   return deadline
 }
 
-// helper: for admin to change the user's username
+// for admin to change the user's username
 function checkApprovedAdmin(adminUserId, callback) {
   if (!adminUserId) {
     return callback(null, false, 400, 'admin_user_id is required.')
@@ -254,7 +250,7 @@ function saveAllocationResults(updates, callback) {
 }
 
 // GET /api/admin/holiday-mode
-// frontend can use this api to decide whether to hide bidding options.
+// frontend can use this api to decide whether to hide bidding options
 router.get('/holiday-mode', (req, res) => {
   const sql = `
     SELECT setting_value, updated_at
@@ -338,8 +334,6 @@ router.post('/set-holiday-mode', (req, res) => {
   })
 })
 
-
-
 // tell frontend a specific target week bidding status (open/ closed)
 // GET /api/admin/bidding-status
 router.get('/bidding-status', (req, res) => {
@@ -391,8 +385,6 @@ router.get('/bidding-status', (req, res) => {
     })
   })
 })
-
-
 
 // admin manually open bidding for a targetweek
 // POST /api/admin/open-bidding
@@ -473,7 +465,6 @@ router.post('/delete-booking', (req, res) => {
   })
 })
 
-
 // admin manually close bidding for a targetweek
 // POST /api/admin/close-bidding
 router.post('/close-bidding', (req, res) => {
@@ -514,8 +505,6 @@ router.post('/close-bidding', (req, res) => {
     })
   })
 })
-
-
 
 // admin run allocation algo
 // POST /api/admin/run-allocation
@@ -569,7 +558,6 @@ router.post('/run-allocation', (req, res) => {
       return res.json([])
     }
 
-    // Updated helper functions to process with the date passed in
     function formatLocalDate(date) {
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -579,8 +567,6 @@ router.post('/run-allocation', (req, res) => {
     }
 
     function parseMysqlDateOnly(dateValue) {
-      // MySQL DATE may come back as a JS Date object.
-      // NOT using  toISOString() anymore, because it can shift the date by timezone.
       if (dateValue instanceof Date) {
         return new Date(
           dateValue.getFullYear(),
@@ -604,7 +590,7 @@ router.post('/run-allocation', (req, res) => {
     function getWeekMondayString(dateValue) {
       const date = parseMysqlDateOnly(dateValue)
 
-      // getDay(): Sunday = 0, Monday = 1, ..., Saturday = 6
+      // getDay(): Sunday = 0, Monday = 1...
       const day = date.getDay()
       const daysSinceMonday = (day + 6) % 7
 
@@ -612,10 +598,6 @@ router.post('/run-allocation', (req, res) => {
 
       return formatLocalDate(date)
     }
-
-
-
-
 
     // group bids by slot
     const slots = {}
@@ -643,21 +625,16 @@ router.post('/run-allocation', (req, res) => {
       const totalA = a.all_bids.reduce((sum, bid) => sum + Number(bid.effective_bid_value), 0)
       const totalB = b.all_bids.reduce((sum, bid) => sum + Number(bid.effective_bid_value), 0)
       if (totalB !== totalA) return totalB - totalA // highest demand first
-      // tiebreak by date/time for determinism
+      // tiebreak by date/time 
       if (a.slot_date !== b.slot_date) return a.slot_date.localeCompare(b.slot_date)
       return String(a.slot_time).localeCompare(String(b.slot_time))
     })
 
-    // track how many slots each band has won per week
     // key format --> "2026-06-22_1"
     const bandWeeklyWinCount = {}
 
     const response = []
     const bidResultUpdates = []
-    // MS3: bids on a slot where EVERY candidate already hit the 2-slot
-    // weekly cap ("No eligible band" / "No band" on the allocation grid)
-    // don't get a normal won/lost UPDATE — they get deleted outright,
-    // since there's no winner and nothing meaningful to keep on record.
     const unallocatedBidIds = []
 
     sortedSlots.forEach((slot) => {
@@ -1024,7 +1001,6 @@ router.post('/edit-band-type', (req, res) => {
     })
   }
 
-  // 1: make sure this user is admin --> check
   const adminSql = `
     SELECT id, role, status
     FROM users
@@ -1053,7 +1029,6 @@ router.post('/edit-band-type', (req, res) => {
       })
     }
 
-    // 2: find current band type first
     const findBandSql = `
       SELECT id, name, band_type, is_active
       FROM bands
@@ -1091,7 +1066,6 @@ router.post('/edit-band-type', (req, res) => {
         })
       }
 
-      // 3: update band type
       const updateSql = `
         UPDATE bands
         SET band_type = ?
@@ -1117,7 +1091,6 @@ router.post('/edit-band-type', (req, res) => {
     })
   })
 })
-
 
 // POST /api/admin/edit-band-name
 // admin can edit  band name at any time if the name was keyed wrongly
@@ -1214,9 +1187,6 @@ router.post('/edit-band-name', (req, res) => {
   })
 })
 
-
-
-
 // admin delete / de-activate a band
 // MS2 for now using soft delete, if need to change exact delete, will process later
 // ps: soft delete keeps historical bids/bookings safe.
@@ -1276,8 +1246,6 @@ router.post('/delete-band', (req, res) => {
           message: 'Band not found.'
         })
       }
-
-      // Remove this band_id from users.
       const unlinkUsersSql = `
         UPDATE users
         SET band_id = NULL
@@ -1300,8 +1268,6 @@ router.post('/delete-band', (req, res) => {
     })
   })
 })
-
-
 
 // POST /api/admin/add-band-member
 // admin adds a normal member to a band
@@ -1339,7 +1305,6 @@ router.post('/add-band-member', (req, res) => {
     })
   })
 })
-
 
 //POST /api/admin/remove-band-member
 // only remove normal member, not leader, leader can reassign
@@ -1380,8 +1345,6 @@ router.post('/remove-band-member', (req, res) => {
     })
   })
 })
-
-
 
 // POST /api/admin/assign-band-leader
 // admin assigns/reassigns a leader to a band (MS3 version)
@@ -1506,8 +1469,6 @@ router.post('/assign-band-leader', (req, res) => {
   })
 })
 
-
-
 // admin confirm booking for winner bands (after running suggested-allocation algo)
 // POST /api/admin/confirm-booking
 router.post('/confirm-booking', (req, res) => {
@@ -1532,7 +1493,6 @@ router.post('/confirm-booking', (req, res) => {
     })
   }
 
-  // 1) Check whether this slot has already been confirmed
   const checkSql = `
     SELECT *
     FROM bookings
@@ -1555,7 +1515,6 @@ router.post('/confirm-booking', (req, res) => {
       })
     }
 
-    // 2) Safety check: each band can have max 2 confirmed band slots per week
     const { weekMonday, weekSunday } = getWeekRange(slot_date)
 
     const countSql = `
@@ -1566,7 +1525,6 @@ router.post('/confirm-booking', (req, res) => {
         AND status = 'confirmed'
         AND slot_date BETWEEN ? AND ?
     `
-
     db.query(
       countSql,
       [
@@ -1646,10 +1604,6 @@ router.post('/confirm-booking', (req, res) => {
     )
   })
 })
-
-
-
-
 
 // Admin able to check the confirmed bookings
 // GET /api/admin/bookings
@@ -1914,10 +1868,6 @@ router.post('/edit-username', (req, res) => {
 
     })
 
-
-
-
-
 // admin views all users
 // GET /api/admin/users
 // MS2: now also returns all bands each user belongs to.
@@ -2022,8 +1972,6 @@ router.get('/users', (req, res) => {
     })
   })
 })
-
-
 
 // POST /api/admin/delete-user
 // admin soft-deletes / deactivates a user.
@@ -2142,9 +2090,6 @@ router.post('/delete-user', (req, res) => {
   })
 })
 
-
-
-
 // Admin views all active bands, their leaders, and their members (sync with frontend design)
 // ps: ?include_inactive=true if admin wants to see deactivated bands also
 // GET /api/admin/bands
@@ -2242,11 +2187,6 @@ router.get('/bands', (req, res) => {
   })
 })
 
-
-
-
-
-
 // admin viewing pending sign-up requests
 // GET /api/admin/pending-users
 router.get('/pending-users', (req, res) => {
@@ -2275,14 +2215,6 @@ router.get('/pending-users', (req, res) => {
         res.json(results)
     })
   })
-
-
-
-
-
-
-
-
 
 // admin approves a pending signup request
 //POST /api/admin/approve-user
@@ -2347,11 +2279,6 @@ router.post('/approve-user', (req,res) => {
         })
       })
     })
-
-
-
-
-
 
 // admin rejects a pending signup request
 // POST /api/admin/reject-user
@@ -2433,7 +2360,6 @@ router.post('/reset-allocation', (req, res) => {
     })
   })
 })
-
 
 // Admin rejects a booking
 // POST /api/admin/reject-booking

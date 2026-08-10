@@ -356,7 +356,6 @@ router.post('/request-reset-otp', (req, res) => {
         })
       }
 
-      // 60-second resend cooldown
       db.query(
         'SELECT created_at FROM password_reset_otps WHERE email = ?',
         [email],

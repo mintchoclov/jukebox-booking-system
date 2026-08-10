@@ -23,14 +23,10 @@ async function sendOtpEmail(to, otp) {
 module.exports = { sendOtpEmail }
 */
 
-// changed MS3 mailer, added the development mode, so no need actual email,
-// dependent on the .env: EMAIL_DEV_MODE=true, if false, then will send actual email
+
 const { Resend } = require('resend')
 
 async function sendOtpEmail(to, otp) {
-  // Local development fallback:
-  // If EMAIL_DEV_MODE=true, do not send a real email.
-  // Print OTP in terminal so we can test signup/reset password without Resend API key.
   if (process.env.EMAIL_DEV_MODE === 'true') {
     console.log('================ DEV EMAIL MODE ================')
     console.log(`To: ${to}`)

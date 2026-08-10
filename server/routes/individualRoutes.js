@@ -1,16 +1,15 @@
-// MS3 version: this is an individual booking api
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const { createBookingEvent, deleteBookingEvent } = require('../calendarService')
 const notifications = require('../notifications')
-// photo-taking for humidifier
+
 const {
     uploadHumidifierPhoto,
     buildHumidifierPhotoUrl,
     deleteUploadedFile
 } = require('../humidifierUpload')
-// valid 2-hour slot times
+
 const validSlotTimes = [
   '08:00',
   '10:00',
@@ -21,8 +20,7 @@ const validSlotTimes = [
   '20:00',
   '22:00'
 ]
-// helper func: sync front end slot labels with mysql time format
-// this func is copied from bidRoutes (originally written in bidRoutes)
+// sync front end slot labels with mysql time format
 function normalizeSlotTime(slotTime) {
   if (!slotTime) {
     return null
@@ -165,8 +163,6 @@ function isSelfPracticeWindowOpen(slotDate) {
 
   return now >= openTime
 }
-
-
 
 // No.1
 //POST /api/individual/book

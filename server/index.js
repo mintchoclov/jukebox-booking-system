@@ -44,11 +44,10 @@ app.use('/api/individual', individualRoutes)
 app.use('/api/band', bandRoutes)
 
 
-// added
 app.get('/', (req, res) => {
   res.send('JukeBox backend is running!')
 })
-// test
+
 app.get('/test', (req, res) => {
   res.json({ message: 'JukeBox backend is running!' })
 })
