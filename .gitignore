@@ -167,6 +167,7 @@ server/*.test.js
 server/*.spec.js
 server/jest.config.js
 server/jest-results.json
+server/test_commands.txt
 
 # photo uploaded for humidifier
 server/uploads/
