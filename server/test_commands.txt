@@ -1,5 +1,0 @@
-测试后端api的命令行
-curl http://localhost:3001/test
-curl -X POST "http://localhost:3001/api/auth/login" -H "Content-Type: application/json" -d '{"email":"e1234567@u.nus.edu","password":"123456"}'
-curl http://localhost:3001/api/bids
-curl -X POST "http://localhost:3001/api/admin/run-allocation"
