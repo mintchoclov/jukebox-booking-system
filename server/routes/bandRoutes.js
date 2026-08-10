@@ -11,7 +11,6 @@ const {
 } = require('../humidifierUpload')
 
 
-// helper function
 // fetch booking and check whether user is the band leader
 // when admin is band leader, he/she still be able to confirm/release band booking
 function getLeaderBooking(userId, bookingId, callback) {
@@ -546,9 +545,6 @@ router.post('/upload-humidifier-photo', uploadHumidifierPhoto, (req, res) => {
   })
 })
 
-
-
-
 // POST /api/band/holiday-book
 // in holiday mode, band leaders can directly book a band slot without bidding
 router.post('/holiday-book', (req, res) => {
@@ -580,7 +576,6 @@ router.post('/holiday-book', (req, res) => {
     })
   }
 
-  // Step 1: check holiday mode
   const holidaySql = `
     SELECT setting_value
     FROM system_settings
@@ -604,7 +599,6 @@ router.post('/holiday-book', (req, res) => {
       })
     }
 
-    // Step 2: check user is approved and is leader of this band
     const leaderSql = `
       SELECT
         users.id AS user_id,
@@ -662,7 +656,6 @@ router.post('/holiday-book', (req, res) => {
         })
       }
 
-      // Step 3: check target slot is free
       const checkSlotSql = `
         SELECT id, booking_type, status
         FROM bookings
@@ -760,10 +753,6 @@ router.post('/holiday-book', (req, res) => {
   })
 })
 
-
-
-
-
 // POST /api/band/confirm-booking
 // Band leader confirms an admin-confirmed band booking.
 // Google Calendar event is created ONLY after band leader confirms.
@@ -817,8 +806,6 @@ router.post('/confirm-booking', (req, res) => {
       })
     }
 
-    // If already confirmed, still try to sync calendar.
-    // This helps retry Google Calendar sync if it failed before.
     if (booking.band_confirmation_status === 'confirmed') {
       return createBookingEvent(booking_id, (calendarErr, calendarResult) => {
         if (calendarErr) {
@@ -891,8 +878,6 @@ router.post('/confirm-booking', (req, res) => {
     })
   })
 })
-
-
 
 // POST /api/band/release-booking
 // Band leader releases a band booking.

@@ -1,7 +1,3 @@
-// This is for the Google Calendar API
-
-// create event + delete event
-
 const { google } = require('googleapis')
 const db = require('./db')
 
@@ -67,9 +63,8 @@ function addHours(date, hours) {
 used extendedProperties.private 存 source 和 booking_id。
 Google 官方文档 said extended properties 可以存 app-specific key-value metadata；
 做 pull sync 的时候，可以分辨哪些 events 是系统创建的，哪些是 admin 手动创建的
-
 */
-// ----------------------------------------------------
+
 // create event inside Google calendar
 function createBookingEvent(bookingId, callback) {
   if (!isCalendarEnabled()) {
@@ -156,7 +151,6 @@ function createBookingEvent(bookingId, callback) {
       }
     }
 
-    // try catch block
     try {
       const response = await calendar.events.insert({
         calendarId,

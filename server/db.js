@@ -57,7 +57,6 @@ console.log(
   process.env.DB_PORT
 )
 
-// Use connection pool instead of single connection(MS1), more stable
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT),
